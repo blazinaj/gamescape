@@ -6,6 +6,7 @@ import { Tool } from '../types/EquipmentTypes';
 import { Skill } from '../types/ExperienceTypes';
 import { HealthState } from '../types/HealthTypes';
 import * as THREE from 'three';
+import { GameScenario } from '../components/ScenarioSelector';
 
 export interface GameSave {
   id: string;
@@ -18,6 +19,12 @@ export interface GameSave {
   play_time: number;
   character_customization: CharacterCustomization;
   health_data: HealthState;
+  scenario_data?: {
+    id: string;
+    name: string;
+    prompt: string;
+    theme: string;
+  };
 }
 
 export interface SavedMapTile {
@@ -123,6 +130,111 @@ export class SaveSystem {
       return data.id;
     } catch (error) {
       console.error('Failed to create new game:', error);
+      return null;
+    }
+  }
+
+  async createNewGameWithScenario(name: string, scenario: GameScenario): Promise<string | null> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return null;
+      }
+
+      // Determine starting biome based on scenario theme
+      let startingBiome = 'grassland';
+      switch (scenario.theme) {
+        case 'pastoral':
+          startingBiome = 'grassland';
+          break;
+        case 'archaeological':
+          startingBiome = 'ruins';
+          break;
+        case 'survival':
+          startingBiome = 'forest';
+          break;
+        case 'fantasy':
+          startingBiome = 'forest';
+          break;
+        case 'nautical':
+          startingBiome = 'lake';
+          break;
+        case 'industrial':
+          startingBiome = 'village';
+          break;
+        case 'apocalyptic':
+          startingBiome = 'desert';
+          break;
+        default:
+          startingBiome = 'grassland';
+      }
+
+      const { data, error } = await supabase
+        .from('games')
+        .insert([
+          {
+            name,
+            user_id: user.id,
+            player_position: { x: 0, y: 0, z: 0 },
+            player_rotation: { x: 0, y: 0, z: 0, w: 1 },
+            current_biome: startingBiome,
+            play_time: 0,
+            character_customization: {
+              bodyColor: '#FFDBAC',
+              clothingColor: '#3B82F6',
+              eyeColor: '#000000',
+              scale: 1.0,
+              headScale: 1.0,
+              bodyWidth: 1.0,
+              armLength: 1.0,
+              legLength: 1.0,
+              name: 'Adventurer'
+            },
+            health_data: {
+              current: 100,
+              maximum: 100,
+              regeneration: 1,
+              lastDamageTime: 0,
+              isRegenerating: false
+            },
+            scenario_data: {
+              id: scenario.id,
+              name: scenario.name,
+              prompt: scenario.prompt,
+              theme: scenario.theme
+            }
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      this.currentGameId = data.id;
+      this.startTime = Date.now();
+      
+      // Store the scenario in player_settings for future reference
+      await supabase
+        .from('player_settings')
+        .insert([
+          {
+            game_id: data.id,
+            setting_key: 'scenario',
+            setting_value: {
+              id: scenario.id,
+              name: scenario.name,
+              description: scenario.description,
+              prompt: scenario.prompt,
+              theme: scenario.theme,
+              difficulty: scenario.difficulty,
+              features: scenario.features
+            }
+          }
+        ]);
+
+      return data.id;
+    } catch (error) {
+      console.error('Failed to create new game with scenario:', error);
       return null;
     }
   }
@@ -424,6 +536,42 @@ export class SaveSystem {
     } catch (error) {
       console.error('Failed to delete game:', error);
       return false;
+    }
+  }
+
+  async getGameScenario(gameId: string): Promise<any | null> {
+    try {
+      // First check if scenario data is in the game record
+      const { data: gameData, error: gameError } = await supabase
+        .from('games')
+        .select('scenario_data')
+        .eq('id', gameId)
+        .single();
+
+      if (gameData?.scenario_data) {
+        return gameData.scenario_data;
+      }
+
+      // If not, check player_settings
+      const { data, error } = await supabase
+        .from('player_settings')
+        .select('setting_value')
+        .eq('game_id', gameId)
+        .eq('setting_key', 'scenario')
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No scenario found, not an error
+          return null;
+        }
+        throw error;
+      }
+
+      return data?.setting_value || null;
+    } catch (error) {
+      console.error('Failed to get game scenario:', error);
+      return null;
     }
   }
 

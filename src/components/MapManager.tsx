@@ -39,6 +39,10 @@ export class MapManager {
     this.callbacks = callbacks;
   }
 
+  setScenario(prompt: string, theme: string): void {
+    this.aiGenerator.setScenario(prompt, theme);
+  }
+
   async updateAroundPosition(playerPosition: THREE.Vector3): Promise<void> {
     const playerTileX = Math.floor(playerPosition.x / this.tileSize);
     const playerTileZ = Math.floor(playerPosition.z / this.tileSize);
@@ -282,7 +286,8 @@ export class MapManager {
       desert: 0xD2691E,
       mountains: 0x696969,
       lake: 0x1E40AF,
-      village: 0x92400E
+      village: 0x92400E,
+      ruins: 0x8B8878
     };
     return colors[biome as keyof typeof colors] || 0x10B981;
   }

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { SaveSystem, GameSave } from '../services/SaveSystem';
 import { AuthForm } from './AuthForm';
+import { ScenarioSelector, GameScenario } from './ScenarioSelector';
 import { useAuth } from '../hooks/useAuth';
 import { ExperienceSystem } from '../services/ExperienceSystem';
-import { Play, Plus, Trash2, Clock, Calendar, Loader2, AlertCircle, LogOut, User, Star } from 'lucide-react';
+import { Play, Plus, Trash2, Clock, Calendar, Loader2, AlertCircle, LogOut, User, Star, Scroll } from 'lucide-react';
 
 interface StartMenuProps {
   onNewGame: (gameName: string) => void;
@@ -14,8 +15,9 @@ export const StartMenu: React.FC<StartMenuProps> = ({ onNewGame, onLoadGame }) =
   const { user, loading: authLoading, signOut, isAuthenticated } = useAuth();
   const [savedGames, setSavedGames] = useState<GameSave[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [showNewGameForm, setShowNewGameForm] = useState(false);
+  const [showScenarioSelector, setShowScenarioSelector] = useState(false);
   const [newGameName, setNewGameName] = useState('');
+  const [selectedScenario, setSelectedScenario] = useState<GameScenario | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalLevel, setTotalLevel] = useState<number>(0);
@@ -54,13 +56,29 @@ export const StartMenu: React.FC<StartMenuProps> = ({ onNewGame, onLoadGame }) =
     // which will trigger the useEffect to load games
   };
 
-  const handleNewGame = async () => {
-    if (!newGameName.trim()) return;
+  const handleStartNewGame = () => {
+    setShowScenarioSelector(true);
+    setNewGameName('');
+    setSelectedScenario(null);
+    setError(null);
+  };
+
+  const handleScenarioSelected = (scenario: GameScenario) => {
+    setSelectedScenario(scenario);
+    setShowScenarioSelector(false);
+    
+    // Generate a default name based on the scenario
+    const defaultName = `${scenario.name} Adventure`;
+    setNewGameName(defaultName);
+  };
+
+  const handleCreateGame = async () => {
+    if (!newGameName.trim() || !selectedScenario) return;
     
     setIsCreating(true);
     setError(null);
     try {
-      const gameId = await saveSystem.createNewGame(newGameName.trim());
+      const gameId = await saveSystem.createNewGameWithScenario(newGameName.trim(), selectedScenario);
       if (gameId) {
         onNewGame(gameId);
       } else {
@@ -99,7 +117,7 @@ export const StartMenu: React.FC<StartMenuProps> = ({ onNewGame, onLoadGame }) =
   const handleSignOut = async () => {
     await signOut();
     setSavedGames([]);
-    setShowNewGameForm(false);
+    setSelectedScenario(null);
     setNewGameName('');
     setError(null);
     setTotalLevel(0);
@@ -164,7 +182,7 @@ export const StartMenu: React.FC<StartMenuProps> = ({ onNewGame, onLoadGame }) =
                 </div>
                 {totalLevel > 8 && ( // Only show if player has leveled beyond starting levels
                   <div className="flex items-center gap-1 pl-2 border-l border-white border-opacity-20">
-                    <Star className="w-4 h-4 text-yellow-400" />
+                    <Star className="w-4  h-4 text-yellow-400" />
                     <span className="text-yellow-300 text-sm font-bold">Lv.{totalLevel}</span>
                   </div>
                 )}
@@ -191,72 +209,101 @@ export const StartMenu: React.FC<StartMenuProps> = ({ onNewGame, onLoadGame }) =
           </div>
         )}
 
+        {/* Scenario Selection */}
+        {showScenarioSelector && (
+          <ScenarioSelector 
+            onSelect={handleScenarioSelected}
+            onCancel={() => setShowScenarioSelector(false)}
+          />
+        )}
+
+        {/* New Game Form (after scenario selection) */}
+        {selectedScenario && !showScenarioSelector && (
+          <div className="mb-8 bg-black bg-opacity-30 backdrop-blur-lg rounded-2xl p-6 border border-white border-opacity-20">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-blue-600 rounded-lg">
+                <selectedScenario.icon className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">{selectedScenario.name}</h3>
+                <p className="text-sm text-gray-300">{selectedScenario.description}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Adventure Name
+                </label>
+                <input
+                  type="text"
+                  value={newGameName}
+                  onChange={(e) => setNewGameName(e.target.value)}
+                  placeholder="Enter a name for your adventure..."
+                  className="w-full px-4 py-3 bg-white bg-opacity-10 border border-white border-opacity-30 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  maxLength={50}
+                  autoFocus
+                />
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCreateGame}
+                  disabled={!newGameName.trim() || isCreating}
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      Start Adventure
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedScenario(null);
+                    setShowScenarioSelector(true);
+                  }}
+                  className="px-4 py-3 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
+                >
+                  Change Scenario
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-8">
           {/* New Game Section */}
-          <div className="bg-black bg-opacity-30 backdrop-blur-lg rounded-2xl p-6 border border-white border-opacity-20">
-            <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-              <Plus className="w-6 h-6" />
-              Start New Adventure
-            </h2>
-            
-            {!showNewGameForm ? (
+          {!selectedScenario && !showScenarioSelector && (
+            <div className="bg-black bg-opacity-30 backdrop-blur-lg rounded-2xl p-6 border border-white border-opacity-20">
+              <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                <Plus className="w-6 h-6" />
+                Start New Adventure
+              </h2>
+              
               <div className="space-y-4">
                 <p className="text-gray-300">
                   Begin a new journey in a unique AI-generated world. Each adventure is different!
                 </p>
                 <button
-                  onClick={() => setShowNewGameForm(true)}
+                  onClick={handleStartNewGame}
                   className="w-full bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 text-white font-bold py-4 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 flex items-center justify-center gap-2"
                 >
-                  <Play className="w-5 h-5" />
-                  Create New Game
+                  <Scroll className="w-5 h-5" />
+                  Choose Scenario
                 </button>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  value={newGameName}
-                  onChange={(e) => setNewGameName(e.target.value)}
-                  placeholder="Enter adventure name..."
-                  className="w-full px-4 py-3 bg-white bg-opacity-10 border border-white border-opacity-30 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  maxLength={50}
-                  autoFocus
-                />
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleNewGame}
-                    disabled={!newGameName.trim() || isCreating}
-                    className="flex-1 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
-                  >
-                    {isCreating ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4" />
-                        Start
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowNewGameForm(false);
-                      setNewGameName('');
-                    }}
-                    className="px-4 py-3 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Load Game Section */}
-          <div className="bg-black bg-opacity-30 backdrop-blur-lg rounded-2xl p-6 border border-white border-opacity-20">
+          <div className={`bg-black bg-opacity-30 backdrop-blur-lg rounded-2xl p-6 border border-white border-opacity-20 ${!selectedScenario && !showScenarioSelector ? 'md:col-span-1' : 'md:col-span-2'}`}>
             <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
               <Play className="w-6 h-6" />
               Continue Adventure

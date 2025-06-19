@@ -13,9 +13,10 @@ import { GameRef } from '../hooks/useGameState';
 import { InteractableObject } from '../services/InteractableObjectManager';
 import { DamageInfo } from '../types/HealthTypes';
 import { collisionSystem } from '../services/CollisionSystem';
+import { GameScenario } from '../components/ScenarioSelector';
 
 export class GameInitializer {
-  static initializeGame(
+  static async initializeGame(
     gameRef: GameRef,
     mountElement: HTMLElement,
     characterCustomization: CharacterCustomization,
@@ -32,7 +33,7 @@ export class GameInitializer {
       setIsLoaded: (loaded: boolean) => void;
       setLoadingError: (error: string) => void;
     }
-  ): void {
+  ): Promise<void> {
     console.log('🎮 Initializing game components...');
     
     try {
@@ -72,6 +73,251 @@ export class GameInitializer {
         // collisionSystem.setDebugMode(true); // Uncomment for visual debugging
       }
 
+      // Setup the scene
+      console.log('🎨 Setting up scene...');
+      gameRef.renderer.setupScene();
+      gameRef.character.addToScene(gameRef.renderer.scene);
+
+      // Mount the renderer
+      console.log('🖥️ Mounting renderer...');
+      mountElement.appendChild(gameRef.renderer.domElement);
+
+      // Set up camera to follow character
+      console.log('📷 Setting up camera...');
+      gameRef.cameraController.setTarget(gameRef.character.mesh);
+
+      // Link character to map manager for object registration
+      console.log('🔗 Linking character to map manager...');
+      gameRef.mapManager.setCharacter(gameRef.character);
+
+      // Set up map manager callbacks
+      console.log('🗺️ Setting up map callbacks...');
+      gameRef.mapManager.setCallbacks({
+        onTileGenerated: callbacks.onTileGenerated,
+        onGenerationStart: callbacks.onGenerationStart
+      });
+
+      // Set initial UI state for input manager and provide game container reference
+      gameRef.inputManager.setUIActive(isUIActive);
+      gameRef.inputManager.setGameContainer(mountElement);
+
+      // Apply loaded game data if available
+      if (gameData) {
+        console.log('🔄 Applying loaded game data...');
+        
+        // Load scenario data if available
+        if (gameData.game.scenario_data) {
+          console.log('🌍 Loading scenario data:', gameData.game.scenario_data.name);
+          
+          // Set scenario context for AI systems
+          gameRef.mapManager.setScenario(
+            gameData.game.scenario_data.prompt,
+            gameData.game.scenario_data.theme
+          );
+          
+          gameRef.conversationSystem.setScenario(gameData.game.scenario_data.prompt);
+        } else {
+          console.log('⚠️ No scenario data found, using default generation');
+        }
+        
+        // Restore player position and rotation
+        const pos = gameData.game.player_position;
+        const rot = gameData.game.player_rotation;
+        
+        console.log('👤 Restoring player to position:', pos);
+        gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
+        gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+        console.log('✅ Player position restored');
+
+        // Restore health state
+        if (gameData.game.health_data) {
+          console.log('❤️ Restoring health state');
+          const healthSystem = gameRef.character.getHealthSystem();
+          const healthData = gameData.game.health_data;
+          healthSystem.setMaxHealth(healthData.maximum);
+          if (healthData.current < healthData.maximum) {
+            const damage = healthData.maximum - healthData.current;
+            healthSystem.takeDamage({
+              amount: damage,
+              type: 'physical',
+              source: 'Save Data',
+              isCritical: false
+            });
+          }
+          healthSystem.setRegeneration(healthData.regeneration);
+        }
+
+        // Restore skills
+        if (gameData.skills && gameData.skills.length > 0) {
+          console.log('📈 Restoring skills');
+          const experienceSystem = gameRef.character.getExperienceSystem();
+          const skillData: any = {};
+          gameData.skills.forEach((skill: any) => {
+            skillData[skill.skill_id] = {
+              level: skill.level,
+              experience: skill.experience,
+              totalExperience: skill.total_experience,
+              multiplier: skill.multiplier
+            };
+          });
+          experienceSystem.importSkills(skillData);
+        }
+
+        // Restore inventory
+        if (gameData.inventory && gameData.inventory.length > 0) {
+          console.log('🎒 Restoring inventory');
+          const inventorySystem = gameRef.character.getInventorySystem();
+          // Clear existing inventory first
+          const currentInventory = inventorySystem.getInventory();
+          currentInventory.forEach(stack => {
+            inventorySystem.removeItem(stack.item.id, stack.quantity);
+          });
+          // Add saved items
+          gameData.inventory.forEach((item: any) => {
+            inventorySystem.addItem(item.item_id, item.quantity);
+          });
+        }
+
+        // Restore equipment
+        if (gameData.equipment && gameData.equipment.length > 0) {
+          console.log('⚔️ Restoring equipment');
+          const equipmentManager = gameRef.character.getEquipmentManager();
+          
+          // Find equipped items and equip them
+          gameData.equipment.forEach((equipment: any) => {
+            if (equipment.is_equipped) {
+              if (equipment.equipment_type === 'tool') {
+                equipmentManager.equipTool(equipment.item_id);
+              } else if (equipment.equipment_type === 'weapon') {
+                equipmentManager.equipWeapon(equipment.item_id);
+              }
+            }
+            
+            // Update durability
+            if (equipment.equipment_type === 'tool') {
+              const tool = equipmentManager.getAvailableTools().find(t => t.id === equipment.item_id);
+              if (tool) {
+                tool.durability = equipment.durability;
+                tool.maxDurability = equipment.max_durability;
+              }
+            } else if (equipment.equipment_type === 'weapon') {
+              const weapon = equipmentManager.getAvailableWeapons().find(w => w.id === equipment.item_id);
+              if (weapon) {
+                weapon.durability = equipment.durability;
+                weapon.maxDurability = equipment.max_durability;
+              }
+            }
+          });
+        }
+
+        // Set the current game ID for saving
+        gameRef.saveSystem.setCurrentGameId(gameData.game.id);
+
+        // Load saved tiles
+        if (gameData.mapTiles.length > 0) {
+          console.log('🗺️ Loading', gameData.mapTiles.length, 'saved tiles');
+          gameRef.mapManager.loadSavedTiles(gameData.mapTiles);
+          console.log('✅ Map tiles loaded');
+        }
+
+        // Generate area around loaded position in background
+        setTimeout(() => {
+          console.log('🌍 Starting background world generation...');
+          if (gameRef.mapManager) {
+            gameRef.mapManager.updateAroundPosition(new THREE.Vector3(pos.x, pos.y, pos.z)).catch(error => {
+              console.error('Background generation error:', error);
+            });
+          }
+        }, 1000);
+      } else {
+        console.log('🆕 Starting new game - generating initial area');
+        // Generate initial area around spawn for new game
+        try {
+          gameRef.mapManager.updateAroundPosition(new THREE.Vector3(0, 0, 0));
+        } catch (error) {
+          console.error('❌ Failed to generate initial area:', error);
+        }
+      }
+
+      // Start game loop
+      GameInitializer.startGameLoop(gameRef, callbacks);
+
+      // Handle window resize
+      const handleResize = () => {
+        if (gameRef.renderer) {
+          gameRef.renderer.handleResize();
+        }
+      };
+
+      window.addEventListener('resize', handleResize);
+
+      console.log('✅ Game initialization complete');
+      callbacks.setIsLoaded(true);
+
+    } catch (error) {
+      console.error('❌ Fatal error during game initialization:', error);
+      callbacks.setLoadingError(`Failed to initialize game: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  static async initializeGameWithScenario(
+    gameRef: GameRef,
+    mountElement: HTMLElement,
+    characterCustomization: CharacterCustomization,
+    gameData: any,
+    scenario: GameScenario,
+    isUIActive: boolean,
+    callbacks: {
+      onTileGenerated: (tile: any, description: string) => void;
+      onGenerationStart: (x: number, z: number) => void;
+      setCurrentBiome: (biome: string) => void;
+      setNearbyNPCs: (npcs: any[]) => void;
+      setClosestNPC: (npc: any) => void;
+      setNearbyObjects: (objects: InteractableObject[]) => void;
+      setClosestObject: (object: InteractableObject | null) => void;
+      setIsLoaded: (loaded: boolean) => void;
+      setLoadingError: (error: string) => void;
+    }
+  ): Promise<void> {
+    console.log('🎮 Initializing game with scenario:', scenario.name);
+    
+    try {
+      // Initialize game components
+      console.log('🔧 Creating GameRenderer...');
+      gameRef.renderer = new GameRenderer();
+      
+      console.log('🔧 Creating Character...');
+      gameRef.character = new Character(characterCustomization);
+      
+      console.log('🔧 Creating InputManager...');
+      gameRef.inputManager = new InputManager();
+      
+      console.log('🔧 Creating CameraController...');
+      gameRef.cameraController = new CameraController(gameRef.renderer.camera);
+      
+      console.log('🔧 Creating MapManager...');
+      gameRef.mapManager = new MapManager(gameRef.renderer.scene);
+      
+      console.log('🔧 Creating ConversationSystem...');
+      gameRef.conversationSystem = new ConversationSystem();
+      
+      console.log('🔧 Creating SaveSystem...');
+      gameRef.saveSystem = new SaveSystem();
+
+      console.log('🔧 Creating EnemyManager...');
+      gameRef.enemyManager = new EnemyManager(gameRef.renderer.scene, gameRef.character.getInventorySystem());
+
+      console.log('✅ All game components created successfully');
+
+      // Set scenario context for AI systems
+      console.log('🌍 Setting scenario context for AI systems');
+      gameRef.mapManager.setScenario(scenario.prompt, scenario.theme);
+      gameRef.conversationSystem.setScenario(scenario.prompt);
+
+      // Initialize collision system with scene reference for debug visualization
+      console.log('🔧 Initializing collision system...');
+      collisionSystem.setScene(gameRef.renderer.scene);
+      
       // Setup the scene
       console.log('🎨 Setting up scene...');
       gameRef.renderer.setupScene();
@@ -214,7 +460,7 @@ export class GameInitializer {
           }
         }, 1000);
       } else {
-        console.log('🆕 Starting new game - generating initial area');
+        console.log('🆕 Starting new game with scenario - generating initial area');
         // Generate initial area around spawn for new game
         try {
           gameRef.mapManager.updateAroundPosition(new THREE.Vector3(0, 0, 0));

@@ -16,12 +16,18 @@ export class ConversationSystem {
   private apiKey: string;
   private baseUrl = 'https://api.openai.com/v1/chat/completions';
   private conversations = new Map<string, ConversationMessage[]>();
+  private scenarioPrompt: string = '';
 
   constructor() {
     this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || '';
     if (!this.apiKey) {
       console.warn('OpenAI API key not found. NPC conversations will use fallback responses.');
     }
+  }
+
+  setScenario(prompt: string): void {
+    this.scenarioPrompt = prompt;
+    console.log('🗣️ Conversation system updated with scenario context');
   }
 
   async startConversation(npc: NPCData): Promise<string> {
@@ -205,12 +211,18 @@ Current Mood: ${npc.mood}
 Topics of Interest: ${npc.topics.join(', ')}
 `;
 
+    // Add scenario context if available
+    let scenarioContext = '';
+    if (this.scenarioPrompt) {
+      scenarioContext = `\nWorld Context: ${this.scenarioPrompt}\n`;
+    }
+
     if (type === 'greeting') {
-      return `${contextInfo}
+      return `${contextInfo}${scenarioContext}
 
 Generate a natural greeting from this character as they notice a traveler approaching. Keep it in character and concise.`;
     } else {
-      return `${contextInfo}
+      return `${contextInfo}${scenarioContext}
 
 Player said: "${playerMessage}"
 

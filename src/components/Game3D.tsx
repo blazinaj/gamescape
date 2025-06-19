@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ConversationUI } from './ConversationUI';
 import { ObjectInteractionUI } from './ObjectInteractionUI';
 import { SaveGameUI } from './SaveGameUI';
@@ -26,22 +26,25 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { GameInitializer } from '../services/GameInitializer';
 import { GameLoader } from '../services/GameLoader';
-import { Zap, Map as MapIcon, MessageCircle, Package, Skull } from 'lucide-react';
+import { Zap, Map as MapIcon, MessageCircle, Package, Skull, Scroll } from 'lucide-react';
 import * as THREE from 'three';
 import { CollisionSystem } from '../services/CollisionSystem';
+import { GameScenario } from './ScenarioSelector';
 
 interface Game3DProps {
   gameId?: string;
+  scenario?: GameScenario;
   onReturnToMenu: () => void;
 }
 
-export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
-  console.log('🚀 Game3D Component Starting - gameId:', gameId);
+export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu }) => {
+  console.log('🚀 Game3D Component Starting - gameId:', gameId, 'scenario:', scenario?.name);
   
   const mountRef = useRef<HTMLDivElement>(null);
   const gameState = useGameState(gameId);
   const uiState = useUIState();
   const [generatedTiles, setGeneratedTiles] = React.useState<Array<{tile: MapTile, description: string}>>([]);
+  const [scenarioInfo, setScenarioInfo] = useState<GameScenario | null>(scenario || null);
 
   const {
     gameRef,
@@ -105,15 +108,20 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
 
   // Load game data first (if gameId provided)
   useEffect(() => {
-    if (!gameId) {
-      console.log('🆕 No gameId provided, will start new game after component mounts');
+    if (!gameId && !scenario) {
+      console.log('🆕 No gameId or scenario provided, will start new game after component mounts');
       setIsLoadingGame(false);
       return;
     }
 
-    console.log('🔄 Loading game data for gameId:', gameId);
-    loadGameData(gameId);
-  }, [gameId]);
+    if (gameId) {
+      console.log('🔄 Loading game data for gameId:', gameId);
+      loadGameData(gameId);
+    } else if (scenario) {
+      console.log('🆕 Starting new game with scenario:', scenario.name);
+      setIsLoadingGame(false);
+    }
+  }, [gameId, scenario]);
 
   // Initialize game components after loading is complete and component is mounted
   useEffect(() => {
@@ -128,13 +136,20 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
     }
 
     console.log('🎮 Ready to initialize game components');
-    initializeGame();
+    
+    if (scenario && !gameData) {
+      // Initialize with scenario
+      initializeGameWithScenario();
+    } else {
+      // Initialize normally (with or without gameData)
+      initializeGame();
+    }
 
     return () => {
       console.log('🧹 Cleaning up game components...');
       GameInitializer.cleanup(gameRef.current);
     };
-  }, [isLoadingGame, gameData]);
+  }, [isLoadingGame, gameData, mountRef.current, scenario]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -209,6 +224,21 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
       });
       setNpcStates(npcStateMap);
       console.log('✅ NPC states restored:', npcStateMap.size, 'NPCs');
+
+      // Load scenario data if available
+      if (saveData.game.scenario_data) {
+        console.log('🌍 Scenario data found:', saveData.game.scenario_data);
+        setScenarioInfo({
+          id: saveData.game.scenario_data.id || 'custom',
+          name: saveData.game.scenario_data.name || 'Custom Scenario',
+          description: 'Loaded from save',
+          icon: Scroll,
+          prompt: saveData.game.scenario_data.prompt || '',
+          theme: saveData.game.scenario_data.theme || 'default',
+          difficulty: 'Medium',
+          features: ['Saved world', 'Custom adventure']
+        });
+      }
 
       setLoadingStep('Almost ready...');
       
@@ -298,6 +328,60 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
     }
   };
 
+  const initializeGameWithScenario = () => {
+    if (!mountRef.current || !scenario) {
+      console.error('❌ mountRef.current is null or scenario is missing during initialization!');
+      return;
+    }
+
+    console.log('🌍 Initializing game with scenario:', scenario.name);
+
+    GameInitializer.initializeGameWithScenario(
+      gameRef.current,
+      mountRef.current,
+      characterCustomization,
+      null, // No game data for new game
+      scenario,
+      isUIActive,
+      {
+        onTileGenerated: (tile, description) => {
+          console.log('🎯 Tile generated:', tile.id);
+          setGeneratedTiles(prev => [...prev, { tile, description }]);
+          setIsGenerating(false);
+        },
+        onGenerationStart: (x, z) => {
+          console.log('🔄 Starting tile generation at:', x, z);
+          setIsGenerating(true);
+        },
+        setCurrentBiome,
+        setNearbyNPCs,
+        setClosestNPC,
+        setNearbyObjects,
+        setClosestObject,
+        setIsLoaded,
+        setLoadingError,
+      }
+    );
+
+    // Register a flat ground collision object
+    CollisionSystem.getInstance().registerObject({
+      id: 'ground',
+      type: 'static',
+      bounds: {
+        type: 'box',
+        center: { x: 0, y: -0.5, z: 0 },
+        size: { x: 2000, y: 1, z: 2000 }
+      },
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      mass: 0,
+      canCollideWith: ['character', 'enemy', 'npc', 'dynamic'],
+      userData: { type: 'ground' }
+    });
+
+    console.log("Ground plane registered with top surface at y=0");
+  };
+
   const handleCharacterCustomization = (customization: CharacterCustomization) => {
     setCharacterCustomization(customization);
     
@@ -383,6 +467,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
     isLoadingGame,
     isLoaded,
     hasGameId: !!gameId,
+    hasScenario: !!scenario,
     loadingError: !!loadingError,
     loadingStep,
     isUIActive,
@@ -429,6 +514,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
         currentBiome={currentBiome}
         isLoaded={isLoaded}
         isPointerLocked={isPointerLocked}
+        scenarioName={scenarioInfo?.name}
       />
 
       {/* Game Controls with Auto-Save Status */}
@@ -605,6 +691,19 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, onReturnToMenu }) => {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Scenario Info */}
+      {scenarioInfo && !isUIActive && (
+        <div className="absolute bottom-4 left-4 bg-blue-900 bg-opacity-50 text-blue-100 p-3 rounded-lg backdrop-blur-sm max-w-md">
+          <div className="flex items-start gap-2">
+            <Scroll className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <div className="text-xs">
+              <div className="font-medium mb-1">Scenario: {scenarioInfo.name}</div>
+              <div className="text-blue-200">{scenarioInfo.description}</div>
+            </div>
           </div>
         </div>
       )}
