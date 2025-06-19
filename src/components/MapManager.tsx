@@ -5,6 +5,8 @@ import { SavedMapTile } from '../services/SaveSystem';
 import { NPC } from './NPC';
 import { Character } from './Character';
 import { collisionSystem } from '../services/CollisionSystem';
+import { CustomVegetation } from '../types/CustomVegetationTypes';
+import { CustomStructure } from '../types/CustomStructureTypes';
 
 export class MapManager {
   private scene: THREE.Scene;
@@ -21,6 +23,8 @@ export class MapManager {
     onGenerationStart?: (x: number, z: number) => void;
     onNPCInteraction?: (npc: NPC) => void;
   } = {};
+  private customVegetation: CustomVegetation[] = [];
+  private customStructures: CustomStructure[] = [];
 
   // Terrain collision objects
   private terrainCollisionObjects = new Map<string, string[]>(); // tile_id -> collision_object_ids
@@ -41,6 +45,16 @@ export class MapManager {
 
   setScenario(prompt: string, theme: string): void {
     this.aiGenerator.setScenario(prompt, theme);
+  }
+  
+  registerCustomVegetation(vegetation: CustomVegetation[]): void {
+    this.customVegetation = vegetation;
+    console.log(`🌳 Registered ${vegetation.length} custom vegetation types for map generation`);
+  }
+  
+  registerCustomStructures(structures: CustomStructure[]): void {
+    this.customStructures = structures;
+    console.log(`🏛️ Registered ${structures.length} custom structure types for map generation`);
   }
 
   async updateAroundPosition(playerPosition: THREE.Vector3): Promise<void> {
@@ -156,6 +170,9 @@ export class MapManager {
       const generatedContent = await this.aiGenerator.generateMapTile(x, z, nearbyBiomes);
       const { tile, description } = generatedContent;
 
+      // Enhance the tile with custom objects based on our scenario
+      this.enhanceTileWithCustomObjects(tile);
+
       const tileGroup = this.createTileObjects(tile);
       this.scene.add(tileGroup);
       this.loadedTiles.set(tileId, tileGroup);
@@ -166,6 +183,97 @@ export class MapManager {
       console.error(`❌ Failed to generate tile ${tileId}:`, error);
     } finally {
       this.isGenerating.delete(tileId);
+    }
+  }
+
+  private enhanceTileWithCustomObjects(tile: MapTile): void {
+    // Skip if we don't have any custom objects
+    if (this.customVegetation.length === 0 && this.customStructures.length === 0) {
+      return;
+    }
+    
+    // Add custom vegetation with ~30% chance per tile
+    if (this.customVegetation.length > 0 && Math.random() < 0.3) {
+      // Select a random custom vegetation
+      const vegetation = this.customVegetation[Math.floor(Math.random() * this.customVegetation.length)];
+      
+      // Create a map object for it at a random position within the tile
+      const posX = tile.x * this.tileSize + (Math.random() - 0.5) * 20;
+      const posZ = tile.z * this.tileSize + (Math.random() - 0.5) * 20;
+      
+      const vegObject: MapObject = {
+        type: vegetation.type,
+        position: { x: posX, y: 0, z: posZ },
+        scale: {
+          x: 0.8 + Math.random() * 0.4,
+          y: vegetation.appearance.height ? vegetation.appearance.height / 5 : 1.0, // Scale height based on vegetation height
+          z: 0.8 + Math.random() * 0.4
+        },
+        rotation: { x: 0, y: Math.random() * Math.PI * 2, z: 0 },
+        color: vegetation.appearance.primaryColor || '#228B22',
+        properties: {
+          customId: vegetation.id,
+          isCustomVegetation: true
+        }
+      };
+      
+      // Add to tile objects
+      tile.objects.push(vegObject);
+      console.log(`🌿 Added custom vegetation '${vegetation.name}' to tile ${tile.id}`);
+    }
+    
+    // Add custom structure with ~15% chance per tile
+    if (this.customStructures.length > 0 && Math.random() < 0.15) {
+      // Select a random custom structure
+      const structure = this.customStructures[Math.floor(Math.random() * this.customStructures.length)];
+      
+      // Create a map object for it, positioned carefully to avoid overlap with other objects
+      // Find a position away from other objects
+      const existingPositions = tile.objects.map(o => ({ x: o.position.x, z: o.position.z }));
+      let posX, posZ, tooClose;
+      let attempts = 0;
+      
+      do {
+        posX = tile.x * this.tileSize + (Math.random() - 0.5) * 15; // Structures are larger, so use smaller area
+        posZ = tile.z * this.tileSize + (Math.random() - 0.5) * 15;
+        tooClose = false;
+        
+        // Check if this position is too close to existing objects
+        for (const pos of existingPositions) {
+          const dx = pos.x - posX;
+          const dz = pos.z - posZ;
+          const distSq = dx * dx + dz * dz;
+          if (distSq < 25) { // 5 units min distance squared
+            tooClose = true;
+            break;
+          }
+        }
+        
+        attempts++;
+      } while (tooClose && attempts < 10);
+      
+      // Only add if we found a good position
+      if (!tooClose || attempts >= 10) {
+        const structObject: MapObject = {
+          type: structure.type,
+          position: { x: posX, y: 0, z: posZ },
+          scale: {
+            x: structure.appearance.width ? structure.appearance.width / 10 : 1.0,
+            y: structure.appearance.height ? structure.appearance.height / 10 : 1.0,
+            z: structure.appearance.length ? structure.appearance.length / 10 : 1.0
+          },
+          rotation: { x: 0, y: Math.random() * Math.PI * 2, z: 0 },
+          color: structure.appearance.primaryColor || '#8B4513',
+          properties: {
+            customId: structure.id,
+            isCustomStructure: true
+          }
+        };
+        
+        // Add to tile objects
+        tile.objects.push(structObject);
+        console.log(`🏛️ Added custom structure '${structure.name}' to tile ${tile.id}`);
+      }
     }
   }
 
@@ -334,7 +442,8 @@ export class MapManager {
         type: 'mapObject', 
         objectType: obj.type,
         mesh: mesh,
-        interactable: this.isInteractableObject(obj.type)
+        interactable: this.isInteractableObject(obj.type),
+        customId: obj.properties?.customId
       }
     });
 
@@ -426,6 +535,28 @@ export class MapManager {
   }
 
   private createObjectMesh(obj: MapObject, biome: string, index: number): THREE.Object3D | null {
+    // Check if this is a custom object
+    const isCustomVegetation = obj.properties?.isCustomVegetation;
+    const isCustomStructure = obj.properties?.isCustomStructure;
+    const customId = obj.properties?.customId;
+    
+    if (isCustomVegetation && customId) {
+      // Find the matching custom vegetation definition
+      const customVeg = this.customVegetation.find(v => v.id === customId);
+      if (customVeg) {
+        return this.createCustomVegetationMesh(obj, customVeg);
+      }
+    }
+    
+    if (isCustomStructure && customId) {
+      // Find the matching custom structure definition
+      const customStruct = this.customStructures.find(s => s.id === customId);
+      if (customStruct) {
+        return this.createCustomStructureMesh(obj, customStruct);
+      }
+    }
+    
+    // If not custom or custom definition not found, use standard object creation
     const cacheKey = `${obj.type}_${biome}_${obj.scale.x}_${obj.scale.y}_${obj.scale.z}`;
     
     // Check cache for similar objects
@@ -544,6 +675,796 @@ export class MapManager {
     this.objectMeshCache.set(cacheKey, mesh.clone());
 
     return mesh;
+  }
+
+  // Method to create custom vegetation meshes
+  private createCustomVegetationMesh(obj: MapObject, vegetation: CustomVegetation): THREE.Object3D {
+    const vegGroup = new THREE.Group();
+    
+    // Base properties from the vegetation definition
+    const primaryColor = vegetation.appearance.primaryColor || '#228B22'; 
+    const secondaryColor = vegetation.appearance.secondaryColor || '#006400';
+    const height = vegetation.appearance.height || 2.0;
+    const width = vegetation.appearance.width || 1.0;
+    const type = vegetation.type;
+    
+    // Create appropriate geometry based on vegetation type
+    switch (type) {
+      case 'tree': {
+        // Create trunk
+        const trunkGeometry = new THREE.CylinderGeometry(width * 0.1, width * 0.15, height * 0.6, 8);
+        const trunkMaterial = new THREE.MeshLambertMaterial({ 
+          color: vegetation.appearance.trunkColor || '#8B4513' 
+        });
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.y = height * 0.3;
+        trunk.castShadow = true;
+        vegGroup.add(trunk);
+        
+        // Create foliage
+        const foliageGeometry = new THREE.SphereGeometry(width * 0.8, 8, 6);
+        const foliageMaterial = new THREE.MeshLambertMaterial({ 
+          color: vegetation.appearance.leafColor || primaryColor
+        });
+        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+        foliage.position.y = height * 0.7;
+        foliage.castShadow = true;
+        vegGroup.add(foliage);
+        
+        // Add fruits if applicable
+        if (vegetation.appearance.hasFruits) {
+          const fruitColor = vegetation.appearance.fruitColor || '#FF0000';
+          for (let i = 0; i < 5; i++) {
+            const fruitGeometry = new THREE.SphereGeometry(width * 0.1, 6, 4);
+            const fruitMaterial = new THREE.MeshLambertMaterial({ color: fruitColor });
+            const fruit = new THREE.Mesh(fruitGeometry, fruitMaterial);
+            
+            // Random position within the foliage
+            const angle = Math.random() * Math.PI * 2;
+            const radius = width * 0.6 * Math.random();
+            fruit.position.set(
+              Math.cos(angle) * radius, 
+              height * (0.6 + Math.random() * 0.3), 
+              Math.sin(angle) * radius
+            );
+            
+            fruit.castShadow = true;
+            vegGroup.add(fruit);
+          }
+        }
+        break;
+      }
+      
+      case 'bush': {
+        // Create main bush shape
+        const bushGeometry = new THREE.SphereGeometry(width * 0.6, 8, 6);
+        const bushMaterial = new THREE.MeshLambertMaterial({ 
+          color: vegetation.appearance.leafColor || primaryColor
+        });
+        const bush = new THREE.Mesh(bushGeometry, bushMaterial);
+        bush.position.y = height * 0.3;
+        bush.castShadow = true;
+        vegGroup.add(bush);
+        
+        // Add some smaller leaf clusters
+        for (let i = 0; i < 3; i++) {
+          const clusterGeometry = new THREE.SphereGeometry(width * 0.4 * (0.7 + Math.random() * 0.3), 7, 5);
+          const clusterMesh = new THREE.Mesh(clusterGeometry, bushMaterial);
+          
+          const angle = i * Math.PI * 2 / 3;
+          clusterMesh.position.set(
+            Math.cos(angle) * width * 0.4,
+            height * (0.3 + Math.random() * 0.2),
+            Math.sin(angle) * width * 0.4
+          );
+          
+          clusterMesh.castShadow = true;
+          vegGroup.add(clusterMesh);
+        }
+        
+        // Add berries if applicable
+        if (vegetation.appearance.hasFruits) {
+          const fruitColor = vegetation.appearance.fruitColor || '#FF0000';
+          for (let i = 0; i < 8; i++) {
+            const berryGeometry = new THREE.SphereGeometry(width * 0.05, 6, 4);
+            const berryMaterial = new THREE.MeshLambertMaterial({ color: fruitColor });
+            const berry = new THREE.Mesh(berryGeometry, berryMaterial);
+            
+            // Random position on bush surface
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+            const r = width * 0.6;
+            
+            berry.position.set(
+              r * Math.sin(phi) * Math.cos(theta),
+              height * 0.3 + r * Math.cos(phi),
+              r * Math.sin(phi) * Math.sin(theta)
+            );
+            
+            vegGroup.add(berry);
+          }
+        }
+        break;
+      }
+      
+      case 'flower':
+      case 'plant': {
+        // Create stem
+        const stemGeometry = new THREE.CylinderGeometry(width * 0.02, width * 0.03, height * 0.8, 5);
+        const stemMaterial = new THREE.MeshLambertMaterial({ 
+          color: secondaryColor 
+        });
+        const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+        stem.position.y = height * 0.4;
+        stem.castShadow = true;
+        vegGroup.add(stem);
+        
+        // Create leaves
+        const leafGeometry = new THREE.SphereGeometry(width * 0.15, 6, 4);
+        const leafMaterial = new THREE.MeshLambertMaterial({ 
+          color: vegetation.appearance.leafColor || primaryColor 
+        });
+        
+        for (let i = 0; i < 2; i++) {
+          const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+          leaf.scale.set(1, 0.3, 1); // Flatten into leaf shape
+          
+          const height = 0.2 + i * 0.3;
+          const angle = i * Math.PI;
+          
+          leaf.position.set(
+            Math.cos(angle) * width * 0.15, 
+            height * 2, 
+            Math.sin(angle) * width * 0.15
+          );
+          
+          leaf.rotation.x = Math.PI / 4;
+          leaf.rotation.y = angle;
+          
+          vegGroup.add(leaf);
+        }
+        
+        // For flowers, add flower petals/blooms
+        if (type === 'flower') {
+          const flowerColor = vegetation.appearance.primaryColor || '#FF69B4';
+          const petalGeometry = new THREE.CircleGeometry(width * 0.2, 5);
+          const petalMaterial = new THREE.MeshLambertMaterial({ 
+            color: flowerColor,
+            side: THREE.DoubleSide 
+          });
+          
+          for (let i = 0; i < 5; i++) {
+            const petal = new THREE.Mesh(petalGeometry, petalMaterial);
+            const angle = (i / 5) * Math.PI * 2;
+            
+            petal.position.set(
+              Math.cos(angle) * width * 0.08, 
+              height * 0.8, 
+              Math.sin(angle) * width * 0.08
+            );
+            
+            petal.rotation.x = Math.PI / 2;
+            petal.rotation.y = angle;
+            
+            vegGroup.add(petal);
+          }
+          
+          // Add center of flower
+          const centerGeometry = new THREE.SphereGeometry(width * 0.08, 8, 6);
+          const centerMaterial = new THREE.MeshLambertMaterial({ 
+            color: vegetation.appearance.secondaryColor || '#FFFF00' 
+          });
+          const center = new THREE.Mesh(centerGeometry, centerMaterial);
+          center.position.y = height * 0.8;
+          vegGroup.add(center);
+        }
+        break;
+      }
+      
+      case 'mushroom': {
+        // Create stem
+        const stemGeometry = new THREE.CylinderGeometry(width * 0.1, width * 0.15, height * 0.6, 6);
+        const stemMaterial = new THREE.MeshLambertMaterial({ 
+          color: vegetation.appearance.secondaryColor || '#F5F5DC' 
+        });
+        const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+        stem.position.y = height * 0.3;
+        stem.castShadow = true;
+        vegGroup.add(stem);
+        
+        // Create cap
+        const capGeometry = new THREE.SphereGeometry(width * 0.3, 8, 6);
+        const capMaterial = new THREE.MeshLambertMaterial({ 
+          color: vegetation.appearance.primaryColor || '#B22222' 
+        });
+        const cap = new THREE.Mesh(capGeometry, capMaterial);
+        cap.position.y = height * 0.65;
+        cap.scale.set(1, 0.5, 1); // Flatten into mushroom cap shape
+        cap.castShadow = true;
+        vegGroup.add(cap);
+        
+        // Add spots on cap for certain mushroom types
+        if (Math.random() > 0.5) {
+          const spotColor = vegetation.appearance.secondaryColor || '#FFFFFF';
+          const spotGeometry = new THREE.CircleGeometry(width * 0.03, 4);
+          const spotMaterial = new THREE.MeshLambertMaterial({ 
+            color: spotColor, 
+            side: THREE.DoubleSide 
+          });
+          
+          for (let i = 0; i < 8; i++) {
+            const spot = new THREE.Mesh(spotGeometry, spotMaterial);
+            
+            // Random position on cap
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI / 4; // Constrain to cap surface
+            const r = width * 0.3;
+            
+            spot.position.set(
+              r * Math.sin(phi) * Math.cos(theta),
+              height * 0.65 + r * Math.cos(phi) * 0.5,
+              r * Math.sin(phi) * Math.sin(theta)
+            );
+            
+            spot.rotation.x = Math.PI / 2;
+            spot.lookAt(new THREE.Vector3(spot.position.x * 2, spot.position.y, spot.position.z * 2));
+            
+            vegGroup.add(spot);
+          }
+        }
+        break;
+      }
+      
+      case 'log': {
+        // Create log cylinder
+        const logGeometry = new THREE.CylinderGeometry(width * 0.3, width * 0.3, height, 8);
+        const logMaterial = new THREE.MeshLambertMaterial({ 
+          color: vegetation.appearance.trunkColor || '#8B4513' 
+        });
+        const log = new THREE.Mesh(logGeometry, logMaterial);
+        
+        // Rotate to horizontal position
+        log.rotation.x = Math.PI / 2;
+        log.position.y = width * 0.3; // Half the diameter to rest on ground
+        
+        log.castShadow = true;
+        vegGroup.add(log);
+        
+        // Add some bark detail
+        for (let i = 0; i < 3; i++) {
+          const barkGeometry = new THREE.BoxGeometry(0.05 * width, 0.1 * width, 0.2 * height);
+          const barkMaterial = new THREE.MeshLambertMaterial({ 
+            color: 0x654321 
+          });
+          const bark = new THREE.Mesh(barkGeometry, barkMaterial);
+          
+          const angle = Math.random() * Math.PI * 2;
+          const radius = width * 0.3;
+          
+          bark.position.set(
+            Math.cos(angle) * radius,
+            width * 0.3 + 0.05 * width,
+            (Math.random() - 0.5) * height
+          );
+          
+          bark.rotation.z = angle;
+          
+          vegGroup.add(bark);
+        }
+        
+        // Add moss or growth on top if needed
+        if (vegetation.appearance.hasFlowers) {
+          const mossGeometry = new THREE.PlaneGeometry(width * 0.6, height * 0.6);
+          const mossColor = vegetation.appearance.secondaryColor || '#7CFC00';
+          const mossMaterial = new THREE.MeshLambertMaterial({ 
+            color: mossColor,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.7
+          });
+          
+          const moss = new THREE.Mesh(mossGeometry, mossMaterial);
+          moss.position.set(0, width * 0.3 + 0.01, 0);
+          moss.rotation.x = -Math.PI / 2;
+          
+          vegGroup.add(moss);
+        }
+        break;
+      }
+      
+      default: {
+        // Generic vegetation object for any other types
+        const genericGeometry = new THREE.SphereGeometry(width * 0.5, 8, 6);
+        const genericMaterial = new THREE.MeshLambertMaterial({ 
+          color: primaryColor 
+        });
+        const genericMesh = new THREE.Mesh(genericGeometry, genericMaterial);
+        genericMesh.position.y = height * 0.5;
+        genericMesh.castShadow = true;
+        vegGroup.add(genericMesh);
+      }
+    }
+    
+    // Apply any custom visual effects
+    if (vegetation.appearance.glow) {
+      const glowColor = vegetation.appearance.emissiveColor || primaryColor;
+      const glowGeometry = new THREE.SphereGeometry(width * 0.6, 8, 6);
+      const glowMaterial = new THREE.MeshLambertMaterial({ 
+        color: glowColor,
+        transparent: true,
+        opacity: 0.2,
+        emissive: glowColor,
+        emissiveIntensity: vegetation.appearance.emissiveIntensity || 1.0
+      });
+      
+      const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+      glowMesh.position.y = height * 0.5;
+      vegGroup.add(glowMesh);
+    }
+    
+    // Set position, scale and rotation from the map object
+    vegGroup.position.set(obj.position.x, obj.position.y, obj.position.z);
+    vegGroup.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+    
+    // Scale is already factored into the individual meshes
+    
+    return vegGroup;
+  }
+  
+  // Method to create custom structure meshes
+  private createCustomStructureMesh(obj: MapObject, structure: CustomStructure): THREE.Object3D {
+    const structGroup = new THREE.Group();
+    
+    // Base properties from the structure definition
+    const primaryColor = structure.appearance.primaryColor || '#8B4513';
+    const secondaryColor = structure.appearance.secondaryColor || '#A0522D';
+    const height = structure.appearance.height || 3.0;
+    const width = structure.appearance.width || 2.0;
+    const length = structure.appearance.length || 2.0;
+    const type = structure.type;
+    
+    // Create appropriate geometry based on structure type
+    switch (type) {
+      case 'building': {
+        // Main building structure
+        const buildingGeometry = new THREE.BoxGeometry(width, height, length);
+        const buildingMaterial = new THREE.MeshLambertMaterial({
+          color: primaryColor
+        });
+        const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+        building.position.y = height / 2; // Center at origin with bottom at ground
+        building.castShadow = true;
+        building.receiveShadow = true;
+        structGroup.add(building);
+        
+        // Add roof if specified
+        if (structure.appearance.hasRoof) {
+          const roofHeight = height * 0.3;
+          const roofGeometry = new THREE.ConeGeometry(Math.max(width, length) * 0.6, roofHeight, 4);
+          const roofMaterial = new THREE.MeshLambertMaterial({
+            color: secondaryColor
+          });
+          
+          const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+          roof.position.y = height + roofHeight / 2;
+          roof.rotation.y = Math.PI / 4; // Orient the pyramid roof
+          roof.castShadow = true;
+          structGroup.add(roof);
+        }
+        
+        // Add door if specified
+        if (structure.appearance.hasDoor) {
+          const doorWidth = Math.min(width, length) * 0.4;
+          const doorHeight = height * 0.6;
+          const doorGeometry = new THREE.PlaneGeometry(doorWidth, doorHeight);
+          const doorMaterial = new THREE.MeshLambertMaterial({
+            color: 0x5D4037,
+            side: THREE.DoubleSide
+          });
+          
+          const door = new THREE.Mesh(doorGeometry, doorMaterial);
+          
+          // Position door on the front face
+          door.position.set(0, doorHeight / 2, length / 2 + 0.01);
+          door.castShadow = false;
+          structGroup.add(door);
+        }
+        
+        // Add windows if specified
+        if (structure.appearance.hasWindows) {
+          const windowSize = Math.min(width, length) * 0.3;
+          const windowGeometry = new THREE.PlaneGeometry(windowSize, windowSize);
+          const windowMaterial = new THREE.MeshLambertMaterial({
+            color: 0xB0C4DE,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.7
+          });
+          
+          // Side windows
+          const windowOffsetY = height * 0.6;
+          
+          // Front windows (one on each side of the door)
+          const window1 = new THREE.Mesh(windowGeometry, windowMaterial);
+          window1.position.set(-width * 0.25, windowOffsetY, length / 2 + 0.01);
+          structGroup.add(window1);
+          
+          const window2 = new THREE.Mesh(windowGeometry, windowMaterial);
+          window2.position.set(width * 0.25, windowOffsetY, length / 2 + 0.01);
+          structGroup.add(window2);
+          
+          // Side windows
+          const window3 = new THREE.Mesh(windowGeometry, windowMaterial);
+          window3.position.set(width / 2 + 0.01, windowOffsetY, 0);
+          window3.rotation.y = Math.PI / 2;
+          structGroup.add(window3);
+          
+          const window4 = new THREE.Mesh(windowGeometry, windowMaterial);
+          window4.position.set(-width / 2 - 0.01, windowOffsetY, 0);
+          window4.rotation.y = Math.PI / 2;
+          structGroup.add(window4);
+        }
+        
+        break;
+      }
+      
+      case 'ruin': {
+        // Main structure - partially broken walls
+        const wallSegments = [];
+        const wallHeight = height * 0.8; // Reduced height for ruins
+        const wallThickness = Math.min(width, length) * 0.1;
+        
+        // Ruined appearance - some walls partially destroyed
+        // Wall 1 - mostly intact
+        const wall1Geometry = new THREE.BoxGeometry(width, wallHeight, wallThickness);
+        const wall1Material = new THREE.MeshLambertMaterial({ color: primaryColor });
+        const wall1 = new THREE.Mesh(wall1Geometry, wall1Material);
+        wall1.position.set(0, wallHeight / 2, length / 2 - wallThickness / 2);
+        wall1.castShadow = true;
+        wallSegments.push(wall1);
+        
+        // Wall 2 - partially broken
+        const wall2Geometry = new THREE.BoxGeometry(wallThickness, wallHeight * 0.7, length);
+        const wall2 = new THREE.Mesh(wall2Geometry, wall1Material);
+        wall2.position.set(width / 2 - wallThickness / 2, wallHeight * 0.35, 0);
+        wall2.castShadow = true;
+        wallSegments.push(wall2);
+        
+        // Wall 3 - very broken
+        const wall3Geometry = new THREE.BoxGeometry(width * 0.4, wallHeight * 0.5, wallThickness);
+        const wall3 = new THREE.Mesh(wall3Geometry, wall1Material);
+        wall3.position.set(-width * 0.3, wallHeight * 0.25, -length / 2 + wallThickness / 2);
+        wall3.castShadow = true;
+        wallSegments.push(wall3);
+        
+        // Wall 4 - broken into pieces
+        const wall4Geometry = new THREE.BoxGeometry(wallThickness, wallHeight * 0.6, length * 0.5);
+        const wall4 = new THREE.Mesh(wall4Geometry, wall1Material);
+        wall4.position.set(-width / 2 + wallThickness / 2, wallHeight * 0.3, -length * 0.25);
+        wall4.castShadow = true;
+        wallSegments.push(wall4);
+        
+        // Add rubble around the base
+        for (let i = 0; i < 10; i++) {
+          const rubbleSize = 0.2 + Math.random() * 0.3;
+          const rubbleGeometry = new THREE.DodecahedronGeometry(rubbleSize);
+          const rubble = new THREE.Mesh(rubbleGeometry, wall1Material);
+          
+          const angle = Math.random() * Math.PI * 2;
+          const radius = (Math.max(width, length) / 2) * (0.7 + Math.random() * 0.5);
+          
+          rubble.position.set(
+            Math.cos(angle) * radius,
+            rubbleSize / 2, // Half height to rest on ground
+            Math.sin(angle) * radius
+          );
+          
+          rubble.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+          );
+          
+          rubble.castShadow = true;
+          wallSegments.push(rubble);
+        }
+        
+        // Add walls to group
+        wallSegments.forEach(segment => structGroup.add(segment));
+        
+        // Add some vegetation overgrowth
+        if (structure.appearance.overgrown) {
+          const plantPositions = [
+            [width * 0.4, wallHeight, 0],
+            [0, wallHeight * 0.6, length * 0.4],
+            [-width * 0.3, 0, -length * 0.3]
+          ];
+          
+          plantPositions.forEach(([x, y, z]) => {
+            const vineGeometry = new THREE.SphereGeometry(0.4, 6, 4);
+            const vineMaterial = new THREE.MeshLambertMaterial({
+              color: 0x4CAF50,
+              transparent: true,
+              opacity: 0.9
+            });
+            
+            const vine = new THREE.Mesh(vineGeometry, vineMaterial);
+            vine.position.set(x, y, z);
+            vine.scale.set(1, 0.4, 1);
+            structGroup.add(vine);
+          });
+        }
+        
+        break;
+      }
+      
+      case 'monument': {
+        // Base plinth
+        const plinthGeometry = new THREE.BoxGeometry(width, height * 0.2, width);
+        const plinthMaterial = new THREE.MeshLambertMaterial({ color: secondaryColor });
+        const plinth = new THREE.Mesh(plinthGeometry, plinthMaterial);
+        plinth.position.y = height * 0.1;
+        plinth.castShadow = true;
+        plinth.receiveShadow = true;
+        structGroup.add(plinth);
+        
+        // Main statue
+        const statueGeometry = new THREE.CylinderGeometry(width * 0.2, width * 0.2, height * 0.8, 8);
+        const statueMaterial = new THREE.MeshLambertMaterial({ color: primaryColor });
+        const statue = new THREE.Mesh(statueGeometry, statueMaterial);
+        statue.position.y = height * 0.6;
+        statue.castShadow = true;
+        structGroup.add(statue);
+        
+        // Add decorative elements
+        const ringGeometry = new THREE.TorusGeometry(width * 0.3, width * 0.03, 8, 24);
+        const ringMaterial = new THREE.MeshLambertMaterial({ color: secondaryColor });
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.position.y = height * 0.7;
+        ring.rotation.x = Math.PI / 2;
+        ring.castShadow = true;
+        structGroup.add(ring);
+        
+        break;
+      }
+      
+      case 'bridge': {
+        // Create bridge deck
+        const deckGeometry = new THREE.BoxGeometry(width, height * 0.1, length);
+        const deckMaterial = new THREE.MeshLambertMaterial({ color: primaryColor });
+        const deck = new THREE.Mesh(deckGeometry, deckMaterial);
+        deck.position.y = height * 0.05;
+        deck.castShadow = true;
+        deck.receiveShadow = true;
+        structGroup.add(deck);
+        
+        // Create supports
+        const supportGeometry = new THREE.BoxGeometry(width * 0.1, height, width * 0.1);
+        const supportMaterial = new THREE.MeshLambertMaterial({ color: secondaryColor });
+        
+        // First support
+        const support1 = new THREE.Mesh(supportGeometry, supportMaterial);
+        support1.position.set(-width * 0.4, height * 0.5, length * 0.4);
+        support1.castShadow = true;
+        structGroup.add(support1);
+        
+        // Second support
+        const support2 = new THREE.Mesh(supportGeometry, supportMaterial);
+        support2.position.set(width * 0.4, height * 0.5, length * 0.4);
+        support2.castShadow = true;
+        structGroup.add(support2);
+        
+        // Third support
+        const support3 = new THREE.Mesh(supportGeometry, supportMaterial);
+        support3.position.set(-width * 0.4, height * 0.5, -length * 0.4);
+        support3.castShadow = true;
+        structGroup.add(support3);
+        
+        // Fourth support
+        const support4 = new THREE.Mesh(supportGeometry, supportMaterial);
+        support4.position.set(width * 0.4, height * 0.5, -length * 0.4);
+        support4.castShadow = true;
+        structGroup.add(support4);
+        
+        // Add railings
+        const railingHeight = height * 0.3;
+        const railingGeometry = new THREE.BoxGeometry(width, railingHeight, width * 0.05);
+        const railingMaterial = new THREE.MeshLambertMaterial({ color: secondaryColor });
+        
+        // Front railing
+        const railing1 = new THREE.Mesh(railingGeometry, railingMaterial);
+        railing1.position.set(0, height * 0.1 + railingHeight / 2, length / 2 - width * 0.025);
+        railing1.castShadow = true;
+        structGroup.add(railing1);
+        
+        // Back railing
+        const railing2 = new THREE.Mesh(railingGeometry, railingMaterial);
+        railing2.position.set(0, height * 0.1 + railingHeight / 2, -length / 2 + width * 0.025);
+        railing2.castShadow = true;
+        structGroup.add(railing2);
+        
+        break;
+      }
+      
+      case 'altar': {
+        // Base
+        const baseGeometry = new THREE.BoxGeometry(width, height * 0.2, width);
+        const baseMaterial = new THREE.MeshLambertMaterial({ color: secondaryColor });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.y = height * 0.1;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        structGroup.add(base);
+        
+        // Top slab
+        const topGeometry = new THREE.BoxGeometry(width * 1.2, height * 0.1, width * 1.2);
+        const topMaterial = new THREE.MeshLambertMaterial({ color: primaryColor });
+        const top = new THREE.Mesh(topGeometry, topMaterial);
+        top.position.y = height * 0.95;
+        top.castShadow = true;
+        structGroup.add(top);
+        
+        // Pillars
+        const pillarGeometry = new THREE.CylinderGeometry(width * 0.08, width * 0.08, height * 0.7, 6);
+        const pillarMaterial = new THREE.MeshLambertMaterial({ color: primaryColor });
+        
+        const pillarPositions = [
+          [-width * 0.4, -width * 0.4],
+          [width * 0.4, -width * 0.4],
+          [-width * 0.4, width * 0.4],
+          [width * 0.4, width * 0.4]
+        ];
+        
+        pillarPositions.forEach(([x, z]) => {
+          const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+          pillar.position.set(x, height * 0.5, z);
+          pillar.castShadow = true;
+          structGroup.add(pillar);
+        });
+        
+        // Add magical effects if it's a magical structure
+        if (structure.appearance.style === 'magical') {
+          const glowColor = structure.appearance.emissiveColor || '#4DB6AC';
+          const glowGeometry = new THREE.SphereGeometry(width * 0.2, 8, 6);
+          const glowMaterial = new THREE.MeshLambertMaterial({
+            color: glowColor,
+            transparent: true,
+            opacity: 0.4,
+            emissive: glowColor,
+            emissiveIntensity: 1.0
+          });
+          
+          const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+          glow.position.y = height;
+          structGroup.add(glow);
+        }
+        
+        break;
+      }
+      
+      case 'statue': {
+        // Base
+        const baseGeometry = new THREE.BoxGeometry(width * 0.8, height * 0.1, width * 0.8);
+        const baseMaterial = new THREE.MeshLambertMaterial({ color: secondaryColor });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.y = height * 0.05;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        structGroup.add(base);
+        
+        // Main figure - simplified humanoid shape
+        const torsoGeometry = new THREE.CylinderGeometry(width * 0.2, width * 0.25, height * 0.4, 8);
+        const figureMaterial = new THREE.MeshLambertMaterial({ color: primaryColor });
+        const torso = new THREE.Mesh(torsoGeometry, figureMaterial);
+        torso.position.y = height * 0.3;
+        torso.castShadow = true;
+        structGroup.add(torso);
+        
+        // Head
+        const headGeometry = new THREE.SphereGeometry(width * 0.15, 8, 6);
+        const head = new THREE.Mesh(headGeometry, figureMaterial);
+        head.position.y = height * 0.6;
+        head.castShadow = true;
+        structGroup.add(head);
+        
+        // Arms
+        const armGeometry = new THREE.CylinderGeometry(width * 0.05, width * 0.05, height * 0.4, 6);
+        
+        // Left arm
+        const leftArm = new THREE.Mesh(armGeometry, figureMaterial);
+        leftArm.position.set(width * 0.25, height * 0.3, 0);
+        leftArm.rotation.z = -Math.PI / 4;
+        leftArm.castShadow = true;
+        structGroup.add(leftArm);
+        
+        // Right arm
+        const rightArm = new THREE.Mesh(armGeometry, figureMaterial);
+        rightArm.position.set(-width * 0.25, height * 0.3, 0);
+        rightArm.rotation.z = Math.PI / 4;
+        rightArm.castShadow = true;
+        structGroup.add(rightArm);
+        
+        // Add weathering if specified
+        if (structure.appearance.weathered) {
+          // Apply a more weathered texture or color
+          figureMaterial.color.set(0x9E9E9E);
+          
+          // Add cracks or damage to the statue
+          const crackGeometry = new THREE.BoxGeometry(width * 0.01, height * 0.2, width * 0.01);
+          const crackMaterial = new THREE.MeshLambertMaterial({ color: 0x212121 });
+          
+          for (let i = 0; i < 5; i++) {
+            const crack = new THREE.Mesh(crackGeometry, crackMaterial);
+            
+            // Random positions on the statue
+            const part = Math.random();
+            let y, x, z;
+            
+            if (part < 0.3) {
+              // Crack in base
+              y = height * 0.05;
+              x = (Math.random() - 0.5) * width * 0.7;
+              z = (Math.random() - 0.5) * width * 0.7;
+            } else if (part < 0.7) {
+              // Crack in torso
+              y = height * 0.3;
+              x = (Math.random() - 0.5) * width * 0.4;
+              z = (Math.random() - 0.5) * width * 0.4;
+            } else {
+              // Crack in head
+              y = height * 0.6;
+              x = (Math.random() - 0.5) * width * 0.3;
+              z = (Math.random() - 0.5) * width * 0.3;
+            }
+            
+            crack.position.set(x, y, z);
+            crack.rotation.set(
+              Math.random() * Math.PI,
+              Math.random() * Math.PI,
+              Math.random() * Math.PI
+            );
+            
+            structGroup.add(crack);
+          }
+        }
+        
+        break;
+      }
+      
+      default: {
+        // Create a basic structure for any other types
+        const genericGeometry = new THREE.BoxGeometry(width, height, length);
+        const genericMaterial = new THREE.MeshLambertMaterial({ color: primaryColor });
+        const genericStructure = new THREE.Mesh(genericGeometry, genericMaterial);
+        genericStructure.position.y = height / 2; // Center with bottom at ground level
+        genericStructure.castShadow = true;
+        genericStructure.receiveShadow = true;
+        structGroup.add(genericStructure);
+      }
+    }
+    
+    // Apply any custom visual effects
+    if (structure.appearance.glow) {
+      const glowColor = structure.appearance.emissiveColor || primaryColor;
+      const glowGeometry = new THREE.SphereGeometry(Math.max(width, length) * 0.6, 8, 6);
+      const glowMaterial = new THREE.MeshLambertMaterial({ 
+        color: glowColor,
+        transparent: true,
+        opacity: 0.2,
+        emissive: glowColor,
+        emissiveIntensity: structure.appearance.emissiveIntensity || 1.0
+      });
+      
+      const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+      glowMesh.position.y = height * 0.5;
+      structGroup.add(glowMesh);
+    }
+    
+    // Set position, scale and rotation from the map object
+    structGroup.position.set(obj.position.x, obj.position.y, obj.position.z);
+    structGroup.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+    
+    return structGroup;
   }
 
   // Enhanced object creation methods with improved detail
@@ -1363,6 +2284,8 @@ export class MapManager {
     // Clear caches
     this.aiGenerator.clearCache();
     this.objectMeshCache.clear();
+    this.customVegetation = [];
+    this.customStructures = [];
 
     // Clear interactable objects
     if (this.character) {

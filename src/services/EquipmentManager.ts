@@ -1,4 +1,5 @@
 import { Tool, EquipmentSlot, ToolAction } from '../types/EquipmentTypes';
+import { CustomWeapon, CustomTool } from '../types/CustomItemTypes';
 
 export class EquipmentManager {
   private tools: Map<string, Tool> = new Map();
@@ -7,6 +8,8 @@ export class EquipmentManager {
   private equippedWeapon: Tool | null = null;
   private lastActionTime: number = 0;
   private subscribers: ((tool: Tool | null, weapon: Tool | null) => void)[] = [];
+  private customWeapons: Map<string, CustomWeapon> = new Map();
+  private customTools: Map<string, CustomTool> = new Map();
 
   constructor() {
     this.initializeDefaultTools();
@@ -145,6 +148,104 @@ export class EquipmentManager {
     });
   }
 
+  registerCustomWeapons(weapons: CustomWeapon[]): void {
+    weapons.forEach(weapon => {
+      // Store in custom weapons collection
+      this.customWeapons.set(weapon.id, weapon);
+      
+      // Create standard tool representation
+      const standardWeapon: Tool = {
+        id: weapon.id,
+        name: weapon.name,
+        type: weapon.weaponType,
+        damage: weapon.combatStats.damage,
+        durability: weapon.combatStats.durability,
+        maxDurability: weapon.combatStats.durability,
+        range: weapon.combatStats.range,
+        cooldown: Math.floor(1000 / weapon.combatStats.speed),
+        description: weapon.description,
+        icon: weapon.appearance.icon || '⚔️',
+        color: weapon.appearance.primaryColor || '#C0C0C0',
+        targetTypes: ['enemy'],
+        attackSpeed: weapon.combatStats.speed,
+        weaponType: 'weapon'
+      };
+      
+      // Add to available weapons
+      this.weapons.set(weapon.id, standardWeapon);
+      
+      console.log(`🔫 Registered custom weapon: ${weapon.name}`);
+    });
+    
+    // Notify subscribers about new weapons
+    this.notifySubscribers();
+  }
+
+  registerCustomTools(tools: CustomTool[]): void {
+    tools.forEach(tool => {
+      // Store in custom tools collection
+      this.customTools.set(tool.id, tool);
+      
+      // Determine target types based on effectiveAgainst
+      const targetTypes = this.mapEffectiveAgainstToTargetTypes(tool.effectiveAgainst);
+      
+      // Create standard tool representation
+      const standardTool: Tool = {
+        id: tool.id,
+        name: tool.name,
+        type: tool.toolType,
+        damage: Math.floor(10 + tool.toolStats.efficiency * 10), // Base damage scaled by efficiency
+        durability: tool.toolStats.durability,
+        maxDurability: tool.toolStats.durability,
+        range: 2.0, // Default range
+        cooldown: Math.floor(1000 / (tool.toolStats.efficiency * 0.8)),
+        description: tool.description,
+        icon: tool.appearance.icon || '🔨',
+        color: tool.appearance.primaryColor || '#8B4513',
+        targetTypes: targetTypes,
+        attackSpeed: tool.toolStats.efficiency,
+        weaponType: 'tool'
+      };
+      
+      // Add to available tools
+      this.tools.set(tool.id, standardTool);
+      
+      console.log(`🔨 Registered custom tool: ${tool.name}`);
+    });
+    
+    // Notify subscribers about new tools
+    this.notifySubscribers();
+  }
+
+  private mapEffectiveAgainstToTargetTypes(effectiveAgainst: string[]): string[] {
+    // Map the effectiveAgainst values to standard target types
+    const targetMap: Record<string, string[]> = {
+      'wood': ['tree', 'bush', 'log'],
+      'stone': ['rock', 'ruins'],
+      'ore': ['rock', 'mineral'],
+      'plant': ['plant', 'flower', 'bush'],
+      'animal': ['enemy'],
+      'metal': ['ore', 'metal'],
+      'soil': ['dirt', 'clay'],
+      'magical_plant': ['plant', 'flower', 'magical'],
+      'herb': ['plant', 'flower'],
+      'artifact': ['ruins', 'treasure'],
+      'ruin': ['ruins', 'statue'],
+      'door': ['building', 'chest'],
+      'container': ['chest', 'crate']
+    };
+    
+    // Collect all target types
+    const targetTypes: Set<string> = new Set();
+    
+    effectiveAgainst.forEach(type => {
+      const mappedTypes = targetMap[type] || [type];
+      mappedTypes.forEach(t => targetTypes.add(t));
+    });
+    
+    return Array.from(targetTypes);
+  }
+
   getAvailableTools(): Tool[] {
     return Array.from(this.tools.values());
   }
@@ -249,6 +350,14 @@ export class EquipmentManager {
     return action;
   }
 
+  getCustomWeaponDetails(weaponId: string): CustomWeapon | undefined {
+    return this.customWeapons.get(weaponId);
+  }
+  
+  getCustomToolDetails(toolId: string): CustomTool | undefined {
+    return this.customTools.get(toolId);
+  }
+
   private getEffectForTool(toolType: string): ToolAction['effect'] {
     switch (toolType) {
       case 'axe': return 'harvest';
@@ -261,6 +370,9 @@ export class EquipmentManager {
     switch (toolType) {
       case 'axe': return 'chop';
       case 'pickaxe': return 'mine';
+      case 'hoe': return 'till';
+      case 'shovel': return 'dig';
+      case 'fishing_rod': return 'cast';
       default: return 'swing';
     }
   }
@@ -269,6 +381,9 @@ export class EquipmentManager {
     switch (toolType) {
       case 'axe': return 'wood_chips';
       case 'pickaxe': return 'rock_fragments';
+      case 'hoe': return 'soil';
+      case 'shovel': return 'dirt';
+      case 'fishing_rod': return 'water_splash';
       default: return 'sparks';
     }
   }
@@ -279,7 +394,10 @@ export class EquipmentManager {
       case 'dagger': return 'stab';
       case 'spear': return 'thrust';
       case 'mace': return 'smash';
+      case 'hammer': return 'smash';
       case 'bow': return 'shoot';
+      case 'staff': return 'cast';
+      case 'wand': return 'cast';
       default: return 'attack';
     }
   }
@@ -289,8 +407,11 @@ export class EquipmentManager {
       case 'sword': return 'slash_effect';
       case 'dagger': return 'blood_spatter';
       case 'spear': return 'impact_sparks';
-      case 'mace': return 'crushing_debris';
+      case 'mace': 
+      case 'hammer': return 'crushing_debris';
       case 'bow': return 'arrow_trail';
+      case 'staff':
+      case 'wand': return 'magic_sparks';
       default: return 'combat_sparks';
     }
   }

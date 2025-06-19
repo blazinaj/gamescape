@@ -1,10 +1,12 @@
 import { InventoryItem, InventoryStack } from '../types/InventoryTypes';
+import { CustomItem } from '../types/CustomItemTypes';
 
 export class InventorySystem {
   private items: Map<string, InventoryItem> = new Map();
   private inventory: InventoryStack[] = [];
   private maxSlots: number = 30;
   private subscribers: ((inventory: InventoryStack[]) => void)[] = [];
+  private customItems: Map<string, CustomItem> = new Map();
 
   constructor() {
     this.initializeItems();
@@ -161,6 +163,35 @@ export class InventorySystem {
     defaultItems.forEach(item => {
       this.items.set(item.id, item);
     });
+  }
+
+  registerCustomItems(customItems: CustomItem[]): void {
+    customItems.forEach(item => {
+      // Store in custom items collection
+      this.customItems.set(item.id, item);
+      
+      // Create standard inventory item representation
+      const standardItem: InventoryItem = {
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        description: item.description,
+        icon: item.appearance.icon || '📦',
+        stackable: item.properties.stackable,
+        maxStack: item.properties.maxStack,
+        value: item.properties.value,
+        rarity: item.properties.rarity
+      };
+      
+      // Add to available items
+      this.items.set(item.id, standardItem);
+      
+      console.log(`📦 Registered custom item: ${item.name}`);
+    });
+  }
+
+  getCustomItemDetails(itemId: string): CustomItem | undefined {
+    return this.customItems.get(itemId);
   }
 
   addItem(itemId: string, quantity: number = 1): boolean {

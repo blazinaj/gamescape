@@ -3,6 +3,7 @@ import { Enemy } from '../components/Enemy';
 import { EnemyData } from '../types/EnemyTypes';
 import { InventorySystem } from './InventorySystem';
 import { notificationSystem } from './NotificationSystem';
+import { CustomEnemy } from '../types/CustomEnemyTypes';
 
 export class EnemyManager {
   private scene: THREE.Scene;
@@ -12,10 +13,18 @@ export class EnemyManager {
   private lastSpawnTime = 0;
   private spawnCooldown = 10000; // 10 seconds between spawns
   private maxEnemies = 8; // Maximum enemies at once
+  private customEnemyTypes: Map<string, CustomEnemy> = new Map();
 
   constructor(scene: THREE.Scene, inventorySystem: InventorySystem) {
     this.scene = scene;
     this.inventorySystem = inventorySystem;
+  }
+
+  registerCustomEnemies(customEnemies: CustomEnemy[]): void {
+    customEnemies.forEach(enemy => {
+      this.customEnemyTypes.set(enemy.id, enemy);
+      console.log(`👹 Registered custom enemy type: ${enemy.name}`);
+    });
   }
 
   update(playerPosition: THREE.Vector3, deltaTime: number): void {
@@ -55,8 +64,22 @@ export class EnemyManager {
     const spawnKey = `${Math.floor(spawnPosition.x / 5)}_${Math.floor(spawnPosition.z / 5)}`;
     if (this.spawnPoints.has(spawnKey)) return;
 
-    // Create random enemy
-    const enemyData = this.generateRandomEnemy(spawnPosition);
+    // Create enemy - chance to use custom enemy if available
+    let enemyData: EnemyData;
+    
+    if (this.customEnemyTypes.size > 0 && Math.random() < 0.7) {
+      // Use custom enemy
+      const customEnemies = Array.from(this.customEnemyTypes.values());
+      const selectedCustomEnemy = customEnemies[Math.floor(Math.random() * customEnemies.length)];
+      
+      enemyData = this.convertCustomEnemyToStandard(selectedCustomEnemy, spawnPosition);
+      console.log(`👹 Spawning custom enemy: ${enemyData.name}`);
+    } else {
+      // Use standard enemy
+      enemyData = this.generateRandomEnemy(spawnPosition);
+      console.log(`👹 Spawning standard enemy: ${enemyData.name}`);
+    }
+    
     const enemy = new Enemy(enemyData, spawnPosition);
     
     this.enemies.set(enemyData.id, enemy);
@@ -64,6 +87,33 @@ export class EnemyManager {
     this.spawnPoints.add(spawnKey);
 
     console.log(`👹 Spawned ${enemyData.name} at distance ${spawnDistance.toFixed(1)} from player`);
+  }
+  
+  private convertCustomEnemyToStandard(customEnemy: CustomEnemy, position: THREE.Vector3): EnemyData {
+    return {
+      id: `enemy_instance_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      name: customEnemy.name,
+      type: customEnemy.type,
+      maxHealth: customEnemy.stats.health,
+      currentHealth: customEnemy.stats.health,
+      damage: customEnemy.stats.damage,
+      speed: customEnemy.stats.speed,
+      attackRange: customEnemy.stats.attackRange,
+      attackCooldown: customEnemy.stats.attackSpeed ? Math.floor(1000 / customEnemy.stats.attackSpeed) : 1000,
+      experience: customEnemy.stats.experienceValue,
+      drops: customEnemy.drops.map(drop => ({
+        itemId: drop.itemId,
+        quantity: drop.minQuantity,
+        chance: drop.chance
+      })),
+      behavior: customEnemy.behavior.isAggressive ? 'aggressive' : 'defensive',
+      detectionRange: customEnemy.stats.detectRange,
+      appearance: {
+        bodyColor: customEnemy.appearance.primaryColor || '#8B4513',
+        scale: customEnemy.appearance.size || 1.0,
+        modelType: customEnemy.type
+      }
+    };
   }
 
   private generateRandomEnemy(position: THREE.Vector3): EnemyData {

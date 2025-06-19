@@ -14,8 +14,13 @@ import { InteractableObject } from '../services/InteractableObjectManager';
 import { DamageInfo } from '../types/HealthTypes';
 import { collisionSystem } from '../services/CollisionSystem';
 import { GameScenario } from '../components/ScenarioSelector';
+import { CustomObjectGenerator } from './CustomObjectGenerator';
+import { ObjectDefinitionSystem } from './ObjectDefinitionSystem';
 
 export class GameInitializer {
+  private static customObjectGenerator = new CustomObjectGenerator();
+  private static objectDefinitionSystem = new ObjectDefinitionSystem();
+
   static async initializeGame(
     gameRef: GameRef,
     mountElement: HTMLElement,
@@ -116,6 +121,14 @@ export class GameInitializer {
           );
           
           gameRef.conversationSystem.setScenario(gameData.game.scenario_data.prompt);
+          
+          // Generate and initialize custom objects for this scenario
+          await GameInitializer.initializeCustomObjects(
+            gameRef,
+            gameData.game.scenario_data.id,
+            gameData.game.scenario_data.prompt,
+            gameData.game.scenario_data.theme
+          );
         } else {
           console.log('⚠️ No scenario data found, using default generation');
         }
@@ -220,6 +233,13 @@ export class GameInitializer {
           console.log('✅ Map tiles loaded');
         }
 
+        // Restore NPC states
+        const npcStateMap = new Map();
+        gameData.npcStates.forEach((state: any) => {
+          npcStateMap.set(state.npc_id, state);
+        });
+        console.log('✅ NPC states restored:', npcStateMap.size, 'NPCs');
+
         // Generate area around loaded position in background
         setTimeout(() => {
           console.log('🌍 Starting background world generation...');
@@ -230,7 +250,7 @@ export class GameInitializer {
           }
         }, 1000);
       } else {
-        console.log('🆕 Starting new game - generating initial area');
+        console.log('🆕 No gameId provided, will start new game after component mounts');
         // Generate initial area around spawn for new game
         try {
           gameRef.mapManager.updateAroundPosition(new THREE.Vector3(0, 0, 0));
@@ -313,6 +333,14 @@ export class GameInitializer {
       console.log('🌍 Setting scenario context for AI systems');
       gameRef.mapManager.setScenario(scenario.prompt, scenario.theme);
       gameRef.conversationSystem.setScenario(scenario.prompt);
+      
+      // Generate and initialize custom objects for this scenario
+      await GameInitializer.initializeCustomObjects(
+        gameRef,
+        scenario.id,
+        scenario.prompt,
+        scenario.theme
+      );
 
       // Initialize collision system with scene reference for debug visualization
       console.log('🔧 Initializing collision system...');
@@ -489,6 +517,71 @@ export class GameInitializer {
       callbacks.setLoadingError(`Failed to initialize game: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
+  
+  private static async initializeCustomObjects(
+    gameRef: GameRef,
+    scenarioId: string,
+    scenarioPrompt: string,
+    scenarioTheme: string
+  ): Promise<void> {
+    try {
+      console.log('🎭 Initializing custom objects for scenario:', scenarioId);
+      
+      // Generate custom objects based on the scenario
+      const objectSet = await GameInitializer.customObjectGenerator.generateObjectSet(
+        scenarioId,
+        scenarioPrompt,
+        scenarioTheme
+      );
+      
+      // Register the objects with the object definition system
+      GameInitializer.objectDefinitionSystem.registerObjectSet(objectSet);
+      
+      console.log('✅ Custom objects initialized for scenario:', scenarioId);
+      
+      // Initialize enemy system with custom enemies
+      if (objectSet.objects.enemy && objectSet.objects.enemy.length > 0) {
+        console.log('🐺 Registering custom enemies:', objectSet.objects.enemy.length);
+        gameRef.enemyManager.registerCustomEnemies(objectSet.objects.enemy);
+      }
+      
+      // Initialize item system with custom items
+      if (gameRef.character && objectSet.objects.item && objectSet.objects.item.length > 0) {
+        console.log('🎁 Registering custom items:', objectSet.objects.item.length);
+        gameRef.character.getInventorySystem().registerCustomItems(objectSet.objects.item);
+      }
+      
+      // Initialize weapon/tool system with custom equipment
+      if (gameRef.character) {
+        const equipmentManager = gameRef.character.getEquipmentManager();
+        
+        if (objectSet.objects.weapon && objectSet.objects.weapon.length > 0) {
+          console.log('⚔️ Registering custom weapons:', objectSet.objects.weapon.length);
+          equipmentManager.registerCustomWeapons(objectSet.objects.weapon);
+        }
+        
+        if (objectSet.objects.tool && objectSet.objects.tool.length > 0) {
+          console.log('🔨 Registering custom tools:', objectSet.objects.tool.length);
+          equipmentManager.registerCustomTools(objectSet.objects.tool);
+        }
+      }
+      
+      // Register custom vegetation with map manager
+      if (objectSet.objects.vegetation && objectSet.objects.vegetation.length > 0) {
+        console.log('🌳 Registering custom vegetation:', objectSet.objects.vegetation.length);
+        gameRef.mapManager.registerCustomVegetation(objectSet.objects.vegetation);
+      }
+      
+      // Register custom structures with map manager
+      if (objectSet.objects.structure && objectSet.objects.structure.length > 0) {
+        console.log('🏛️ Registering custom structures:', objectSet.objects.structure.length);
+        gameRef.mapManager.registerCustomStructures(objectSet.objects.structure);
+      }
+      
+    } catch (error) {
+      console.error('Failed to initialize custom objects:', error);
+    }
+  }
 
   private static startGameLoop(
     gameRef: GameRef,
@@ -647,6 +740,10 @@ export class GameInitializer {
     
     // Clean up collision system
     collisionSystem.clear();
+    
+    // Clean up custom object generators
+    GameInitializer.customObjectGenerator.clear();
+    GameInitializer.objectDefinitionSystem.clear();
     
     window.removeEventListener('resize', () => {});
     if (gameRef.renderer) {
