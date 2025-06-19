@@ -167,6 +167,12 @@ export class InventorySystem {
 
   registerCustomItems(customItems: CustomItem[]): void {
     customItems.forEach(item => {
+      // Check if properties exist before accessing them
+      if (!item.properties) {
+        console.warn(`⚠️ Custom item ${item.id} missing properties, skipping registration`);
+        return;
+      }
+
       // Store in custom items collection
       this.customItems.set(item.id, item);
       
