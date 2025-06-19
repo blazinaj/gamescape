@@ -85,8 +85,10 @@ export class SaveSystem {
 
   async createNewGame(name: string): Promise<string | null> {
     try {
+      console.log('🎮 Creating new game:', name);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        console.error('❌ User not authenticated');
         return null;
       }
 
@@ -123,8 +125,12 @@ export class SaveSystem {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error creating game:', error);
+        throw error;
+      }
 
+      console.log('✅ New game created with ID:', data.id);
       this.currentGameId = data.id;
       this.startTime = Date.now();
       return data.id;
@@ -136,8 +142,10 @@ export class SaveSystem {
 
   async createNewGameWithScenario(name: string, scenario: GameScenario): Promise<string | null> {
     try {
+      console.log('🎮 Creating new game with scenario:', scenario.name);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        console.error('❌ User not authenticated');
         return null;
       }
 
@@ -208,8 +216,12 @@ export class SaveSystem {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error creating game with scenario:', error);
+        throw error;
+      }
 
+      console.log('✅ New game created with scenario. ID:', data.id);
       this.currentGameId = data.id;
       this.startTime = Date.now();
       
@@ -241,8 +253,12 @@ export class SaveSystem {
 
   async loadGame(gameId: string): Promise<CompleteGameData | null> {
     try {
+      console.log('🔄 Loading game data for ID:', gameId);
       const isAuth = await this.ensureAuthenticated();
-      if (!isAuth) return null;
+      if (!isAuth) {
+        console.error('❌ User not authenticated');
+        return null;
+      }
 
       // Load game data
       const { data: gameData, error: gameError } = await supabase
@@ -251,7 +267,10 @@ export class SaveSystem {
         .eq('id', gameId)
         .single();
 
-      if (gameError) throw gameError;
+      if (gameError) {
+        console.error('❌ Error loading game data:', gameError);
+        throw gameError;
+      }
 
       // Load map tiles
       const { data: mapTiles, error: tilesError } = await supabase
@@ -259,7 +278,10 @@ export class SaveSystem {
         .select('tile_x, tile_z, biome, objects, description, theme')
         .eq('game_id', gameId);
 
-      if (tilesError) throw tilesError;
+      if (tilesError) {
+        console.error('❌ Error loading map tiles:', tilesError);
+        throw tilesError;
+      }
 
       // Load NPC states
       const { data: npcStates, error: npcError } = await supabase
@@ -267,7 +289,10 @@ export class SaveSystem {
         .select('npc_id, has_talked, conversation_count, last_interaction')
         .eq('game_id', gameId);
 
-      if (npcError) throw npcError;
+      if (npcError) {
+        console.error('❌ Error loading NPC states:', npcError);
+        throw npcError;
+      }
 
       // Load skills
       const { data: skills, error: skillsError } = await supabase
@@ -275,7 +300,10 @@ export class SaveSystem {
         .select('skill_id, level, experience, total_experience, multiplier')
         .eq('game_id', gameId);
 
-      if (skillsError) throw skillsError;
+      if (skillsError) {
+        console.error('❌ Error loading skills:', skillsError);
+        throw skillsError;
+      }
 
       // Load inventory
       const { data: inventory, error: inventoryError } = await supabase
@@ -283,7 +311,10 @@ export class SaveSystem {
         .select('item_id, quantity, slot_index')
         .eq('game_id', gameId);
 
-      if (inventoryError) throw inventoryError;
+      if (inventoryError) {
+        console.error('❌ Error loading inventory:', inventoryError);
+        throw inventoryError;
+      }
 
       // Load equipment
       const { data: equipment, error: equipmentError } = await supabase
@@ -291,8 +322,12 @@ export class SaveSystem {
         .select('equipment_type, item_id, durability, max_durability, is_equipped')
         .eq('game_id', gameId);
 
-      if (equipmentError) throw equipmentError;
+      if (equipmentError) {
+        console.error('❌ Error loading equipment:', equipmentError);
+        throw equipmentError;
+      }
 
+      console.log('✅ Successfully loaded complete game data for ID:', gameId);
       this.currentGameId = gameId;
       this.startTime = Date.now() - (gameData.play_time * 1000);
 
@@ -326,7 +361,10 @@ export class SaveSystem {
     availableWeapons: Tool[],
     scenarioData?: any
   ): Promise<boolean> {
-    if (!this.currentGameId) return false;
+    if (!this.currentGameId) {
+      console.error('❌ No current game ID set');
+      return false;
+    }
 
     try {
       console.log(`💾 Saving game ${this.currentGameId} with ${mapTiles.size} tiles`);
@@ -362,7 +400,12 @@ export class SaveSystem {
         })
         .eq('id', this.currentGameId);
 
-      if (gameError) throw gameError;
+      if (gameError) {
+        console.error('❌ Error updating game data:', gameError);
+        throw gameError;
+      }
+
+      console.log('✅ Game main data updated successfully');
 
       // Convert map tiles to database format
       const tileData: any[] = [];
@@ -412,20 +455,24 @@ export class SaveSystem {
         npcData.push({
           game_id: this.currentGameId,
           npc_id: npcId,
-          has_talked: state.has_talked,
-          conversation_count: state.conversation_count,
-          last_interaction: state.last_interaction
+          has_talked: state.has_talked || false,
+          conversation_count: state.conversation_count || 0,
+          last_interaction: state.last_interaction || null
         });
       });
 
       if (npcData.length > 0) {
+        console.log(`💾 Saving ${npcData.length} NPC states`);
         const { error: npcError } = await supabase
           .from('npc_states')
           .upsert(npcData, {
             onConflict: 'game_id,npc_id'
           });
 
-        if (npcError) throw npcError;
+        if (npcError) {
+          console.error('❌ Error saving NPC states:', npcError);
+          throw npcError;
+        }
       }
 
       // Save skills
@@ -442,13 +489,17 @@ export class SaveSystem {
       });
 
       if (skillData.length > 0) {
+        console.log(`💾 Saving ${skillData.length} skills`);
         const { error: skillsError } = await supabase
           .from('player_skills')
           .upsert(skillData, {
             onConflict: 'game_id,skill_id'
           });
 
-        if (skillsError) throw skillsError;
+        if (skillsError) {
+          console.error('❌ Error saving skills:', skillsError);
+          throw skillsError;
+        }
       }
 
       // Save inventory
@@ -458,10 +509,14 @@ export class SaveSystem {
         .delete()
         .eq('game_id', this.currentGameId);
 
-      if (clearInventoryError) throw clearInventoryError;
+      if (clearInventoryError) {
+        console.error('❌ Error clearing inventory:', clearInventoryError);
+        throw clearInventoryError;
+      }
 
       // Insert current inventory
       if (inventory.length > 0) {
+        console.log(`💾 Saving ${inventory.length} inventory items`);
         const inventoryData = inventory.map((stack, index) => ({
           game_id: this.currentGameId,
           item_id: stack.item.id,
@@ -473,7 +528,10 @@ export class SaveSystem {
           .from('player_inventory')
           .insert(inventoryData);
 
-        if (inventoryError) throw inventoryError;
+        if (inventoryError) {
+          console.error('❌ Error saving inventory:', inventoryError);
+          throw inventoryError;
+        }
       }
 
       // Save equipment
@@ -483,7 +541,10 @@ export class SaveSystem {
         .delete()
         .eq('game_id', this.currentGameId);
 
-      if (clearEquipmentError) throw clearEquipmentError;
+      if (clearEquipmentError) {
+        console.error('❌ Error clearing equipment:', clearEquipmentError);
+        throw clearEquipmentError;
+      }
 
       // Save current equipment
       const equipmentData: any[] = [];
@@ -513,50 +574,21 @@ export class SaveSystem {
       });
 
       if (equipmentData.length > 0) {
+        console.log(`💾 Saving ${equipmentData.length} equipment items`);
         const { error: equipmentError } = await supabase
           .from('player_equipment')
           .insert(equipmentData);
 
-        if (equipmentError) throw equipmentError;
+        if (equipmentError) {
+          console.error('❌ Error saving equipment:', equipmentError);
+          throw equipmentError;
+        }
       }
 
       console.log('💾 Game saved successfully with complete player data');
       return true;
     } catch (error) {
       console.error('Failed to save game:', error);
-      return false;
-    }
-  }
-
-  async listGames(): Promise<GameSave[]> {
-    try {
-      const isAuth = await this.ensureAuthenticated();
-      if (!isAuth) return [];
-
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
-      if (error) throw error;
-      return data || [];
-    } catch (error) {
-      console.error('Failed to list games:', error);
-      return [];
-    }
-  }
-
-  async deleteGame(gameId: string): Promise<boolean> {
-    try {
-      const { error } = await supabase
-        .from('games')
-        .delete()
-        .eq('id', gameId);
-
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error('Failed to delete game:', error);
       return false;
     }
   }
@@ -571,6 +603,7 @@ export class SaveSystem {
         .single();
 
       if (gameData?.scenario_data) {
+        console.log('✅ Found scenario data in game record');
         return gameData.scenario_data;
       }
 
@@ -585,15 +618,62 @@ export class SaveSystem {
       if (error) {
         if (error.code === 'PGRST116') {
           // No scenario found, not an error
+          console.log('ℹ️ No scenario found for this game');
           return null;
         }
+        console.error('❌ Error loading scenario data:', error);
         throw error;
       }
 
+      console.log('✅ Found scenario data in player settings');
       return data?.setting_value || null;
     } catch (error) {
       console.error('Failed to get game scenario:', error);
       return null;
+    }
+  }
+
+  async listGames(): Promise<GameSave[]> {
+    try {
+      const isAuth = await this.ensureAuthenticated();
+      if (!isAuth) {
+        console.error('❌ User not authenticated');
+        return [];
+      }
+
+      const { data, error } = await supabase
+        .from('games')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error listing games:', error);
+        throw error;
+      }
+      return data || [];
+    } catch (error) {
+      console.error('Failed to list games:', error);
+      return [];
+    }
+  }
+
+  async deleteGame(gameId: string): Promise<boolean> {
+    try {
+      console.log('🗑️ Deleting game:', gameId);
+      const { error } = await supabase
+        .from('games')
+        .delete()
+        .eq('id', gameId);
+
+      if (error) {
+        console.error('❌ Error deleting game:', error);
+        throw error;
+      }
+      console.log('✅ Game deleted successfully');
+      return true;
+    } catch (error) {
+      console.error('Failed to delete game:', error);
+      return false;
     }
   }
 

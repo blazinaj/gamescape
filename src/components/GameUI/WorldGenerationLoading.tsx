@@ -13,15 +13,25 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
   const [timeoutTriggered, setTimeoutTriggered] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
+  const [showSkipButton, setShowSkipButton] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     const startTime = Date.now();
     
+    console.log('🌍 World generation loading screen mounted');
+    
     // Update loading time counter
     const timeInterval = setInterval(() => {
       if (!isMounted) return;
-      setLoadingTime(Math.floor((Date.now() - startTime) / 1000));
+      const newTime = Math.floor((Date.now() - startTime) / 1000);
+      setLoadingTime(newTime);
+      
+      // Show skip button after 10 seconds
+      if (newTime >= 10 && !showSkipButton) {
+        console.log('⏱️ Showing skip button after 10 seconds');
+        setShowSkipButton(true);
+      }
     }, 1000);
     
     // Simulate loading progress
@@ -31,7 +41,7 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
       setProgress(prev => {
         // Slow down as we approach 100% to wait for actual generation
         if (prev >= 90) {
-          return Math.min(99, prev + 0.2);
+          return Math.min(97, prev + 0.2);
         }
         return Math.min(90, prev + Math.random() * 1.5);
       });
@@ -39,35 +49,47 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
 
     // Set multiple timeouts with increasing urgency
     
-    // First timeout at 10 seconds
+    // First timeout at 8 seconds - speed up progress if it's lagging
     const firstTimeout = setTimeout(() => {
       if (!isMounted) return;
-      console.log('⏱️ 10-second timeout reached for world generation');
-      if (progress < 60) {
-        setProgress(Math.max(progress, 60));
+      console.log('⏱️ 8-second timeout reached for world generation');
+      if (progress < 50) {
+        setProgress(Math.max(progress, 50));
+        setLoadingMessage("Creating landscape features...");
       }
-    }, 10000);
+    }, 8000);
     
-    // Main timeout at 20 seconds - this should normally complete
+    // Main timeout at 15 seconds - should normally complete by now
+    const mainTimeout = setTimeout(() => {
+      if (!isMounted) return;
+      console.log('⏱️ 15-second timeout reached for world generation');
+      if (progress < 75) {
+        setProgress(Math.max(progress, 75));
+        setLoadingMessage("Finalizing world details...");
+      }
+    }, 15000);
+    
+    // Force timeout at 20 seconds - this should definitely complete
     const forceTimeout = setTimeout(() => {
       if (!isMounted) return;
       
-      console.log('⏱️ 20-second timeout reached for world generation');
+      console.log('⏱️ 20-second timeout reached for world generation - forcing completion');
       setTimeoutTriggered(true);
       setProgress(100);
       setCompleted(true);
+      setLoadingMessage("World generation complete!");
       
       if (onForceComplete) {
-        console.log('🚀 Calling onForceComplete callback from timeout');
+        console.log('🚀 Calling onForceComplete callback from 20s timeout');
         onForceComplete();
       }
     }, 20000);
 
-    // Emergency timeout at 30 seconds as a safety measure
+    // Emergency timeout at 25 seconds as a safety measure
     const emergencyTimeout = setTimeout(() => {
       if (!isMounted) return;
       
-      console.log('⚠️ EMERGENCY 30-second timeout reached, forcing completion');
+      console.log('⚠️ EMERGENCY 25-second timeout reached, forcing completion');
       setTimeoutTriggered(true);
       setProgress(100);
       setCompleted(true);
@@ -76,18 +98,19 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
         console.log('🚨 Calling onForceComplete callback from emergency timeout');
         onForceComplete();
       }
-    }, 30000);
+    }, 25000);
     
-    // Final failsafe at 45 seconds that will definitely force completion
+    // Final failsafe at 30 seconds that will definitely force completion
     const finalFailsafe = setTimeout(() => {
       if (!isMounted) return;
       
-      console.log('🚨 CRITICAL 45-second timeout reached, forcing completion with direct DOM manipulation');
+      console.log('🚨 CRITICAL 30-second timeout reached, forcing completion with direct callback');
       setTimeoutTriggered(true);
       setProgress(100);
       setCompleted(true);
       
       if (onForceComplete) {
+        console.log('💥 Emergency force complete');
         onForceComplete();
       }
       
@@ -95,10 +118,11 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
       try {
         const event = new Event('gameloaded', { bubbles: true });
         document.dispatchEvent(event);
+        console.log('💥 Dispatched synthetic gameloaded event as last resort');
       } catch (e) {
         console.error('Failed to dispatch synthetic event:', e);
       }
-    }, 45000);
+    }, 30000);
 
     // Update loading messages to provide context
     const messages = [
@@ -116,7 +140,7 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
 
     // Add scenario-specific messages if available
     if (scenario) {
-      switch (scenario.theme) {
+      switch (scenario?.theme) {
         case 'pastoral':
           messages.push('Growing peaceful villages...', 'Planting bountiful fields...', 'Setting up farm houses...');
           break;
@@ -156,16 +180,18 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
       clearInterval(messageInterval);
       clearInterval(timeInterval);
       clearTimeout(firstTimeout);
+      clearTimeout(mainTimeout);
       clearTimeout(forceTimeout);
       clearTimeout(emergencyTimeout);
       clearTimeout(finalFailsafe);
+      console.log('🌍 World generation loading screen unmounted');
     };
-  }, [scenario, onForceComplete, progress]);
+  }, [scenario, onForceComplete, showSkipButton, progress]);
 
   // Auto-call onForceComplete when progress reaches 100%
   useEffect(() => {
-    if (progress >= 100 && !completed && onForceComplete) {
-      console.log('🚀 Progress reached 100%, triggering completion');
+    if (progress >= 99 && !completed && onForceComplete) {
+      console.log('🚀 Progress reached 99%, triggering completion');
       setCompleted(true);
       onForceComplete();
     }
@@ -220,7 +246,7 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
         <div className="w-full bg-gray-700 rounded-full h-4 mb-6 overflow-hidden">
           <div 
             className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-300"
-            style={{ width: `${Math.min(progress, 99.9)}%` }}
+            style={{ width: `${progress}%` }}
           ></div>
         </div>
 
@@ -262,11 +288,11 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
 
         {/* Tips and Manual Override */}
         <div className="mt-8 text-sm text-blue-200">
-          <p>This may take a minute for your first-time generation.</p>
+          <p>This may take a moment for your first-time generation.</p>
           <p>A whole world is being created just for you!</p>
           
           {/* Add manual force complete button if it's taking too long */}
-          {loadingTime > 15 && !completed && (
+          {showSkipButton && !completed && (
             <button 
               onClick={handleForceComplete}
               className="mt-4 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm transition-colors"
