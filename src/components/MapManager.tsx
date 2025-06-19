@@ -232,17 +232,23 @@ export class MapManager {
     const groundMaterial = new THREE.MeshLambertMaterial({ 
       color: groundColor,
       transparent: true,
-      opacity: 0.8 
+      opacity: 0.95,     // Higher opacity for more solidity
+      depthWrite: false, // Don't write to depth buffer to avoid z-fighting
+      polygonOffset: true, // Use polygon offset to prevent z-fighting
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1
     });
     
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(
       tile.x * this.tileSize,
-      0, // Visual ground at y: 0
+      0.01, // Slightly above base ground to prevent z-fighting
       tile.z * this.tileSize
     );
     ground.receiveShadow = true;
+    ground.name = `ground_${tile.id}`;
+    ground.renderOrder = 0; // Render after base ground but before other objects
     tileGroup.add(ground);
 
     // Add ground collision BELOW the visual surface

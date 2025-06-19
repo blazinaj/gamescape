@@ -73,20 +73,24 @@ export class GameRenderer {
     const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
     const groundMaterial = new THREE.MeshLambertMaterial({ 
       color: 0x10B981,
-      transparent: true,
-      opacity: 1.0 // Fully opaque to match tile grounds
+      transparent: false,  // Changed from true to false
+      depthWrite: true,    // Ensure proper depth buffer handling
+      side: THREE.FrontSide // Only render the top side
     });
     
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0; // Visual ground at y: 0
     ground.receiveShadow = true;
+    ground.renderOrder = -1; // Ensure it renders before other objects
+    ground.name = "baseGround"; // Add name for easier identification
     this.scene.add(ground);
 
     // Subtle grid for reference (much larger scale)
     const gridHelper = new THREE.GridHelper(200, 40, 0x000000, 0x000000);
     gridHelper.material.opacity = 0.05;
     gridHelper.material.transparent = true;
+    gridHelper.material.depthWrite = false; // Don't write to depth buffer
     gridHelper.position.y = 0.01; // Just above visual ground
     this.scene.add(gridHelper);
   }
