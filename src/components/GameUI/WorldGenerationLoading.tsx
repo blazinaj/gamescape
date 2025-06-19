@@ -3,12 +3,14 @@ import { Loader2, Sparkles, Mountain, Castle, TreePine, Globe } from 'lucide-rea
 import { GameScenario } from '../ScenarioSelector';
 
 interface WorldGenerationLoadingProps {
-  scenario?: GameScenario;
+  scenario?: GameScenario | null;
+  onForceComplete?: () => void;
 }
 
-export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ scenario }) => {
+export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ scenario, onForceComplete }) => {
   const [loadingMessage, setLoadingMessage] = useState('Generating world...');
   const [progress, setProgress] = useState(0);
+  const [timeoutTriggered, setTimeoutTriggered] = useState(false);
 
   useEffect(() => {
     // Simulate loading progress
@@ -16,11 +18,21 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
       setProgress(prev => {
         // Slow down as we approach 100% to wait for actual generation
         if (prev >= 90) {
-          return prev + 0.2;
+          return Math.min(99, prev + 0.2);
         }
         return prev + Math.random() * 1.5;
       });
     }, 200);
+
+    // Set timeout to force completion after 20 seconds if generation is still stuck
+    const forceTimeout = setTimeout(() => {
+      setTimeoutTriggered(true);
+      setProgress(100);
+      if (onForceComplete) {
+        console.log('⏱️ Force completing world generation after timeout');
+        onForceComplete();
+      }
+    }, 20000);
 
     // Update loading messages to provide context
     const messages = [
@@ -73,8 +85,9 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
     return () => {
       clearInterval(interval);
       clearInterval(messageInterval);
+      clearTimeout(forceTimeout);
     };
-  }, [scenario]);
+  }, [scenario, onForceComplete]);
 
   // Select icon based on scenario theme
   const getIcon = () => {
@@ -122,7 +135,7 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
         {/* Loading message */}
         <div className="flex items-center justify-center gap-3 text-lg text-white mb-8">
           <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
-          <p className="animate-pulse">{loadingMessage}</p>
+          <p className="animate-pulse">{timeoutTriggered ? "Final preparations..." : loadingMessage}</p>
         </div>
 
         {/* Generation details */}

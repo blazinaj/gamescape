@@ -90,6 +90,14 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     gameLoaded: isLoaded && !isLoadingGame
   });
 
+  // Force complete loading after waiting too long
+  const handleForceCompleteLoading = () => {
+    if (!initialGenerationComplete) {
+      console.log('🚀 Force completing world generation after timeout');
+      setInitialGenerationComplete(true);
+    }
+  };
+
   // Update input manager about UI state
   useEffect(() => {
     if (gameRef.current.inputManager) {
@@ -158,12 +166,21 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     if (isLoaded && isGenerating) {
       // If game is loaded but still generating, we're in the initial generation phase
       console.log('🌍 Initial world generation in progress...');
-    } else if (isLoaded && !isGenerating && !initialGenerationComplete) {
-      // When generation stops and we haven't marked completion yet
-      console.log('✅ Initial world generation complete!');
+    } else if (isLoaded && !initialGenerationComplete) {
+      // When game is loaded and we haven't marked completion yet, do it
+      console.log('✅ Initial world generation complete or ready!');
       setInitialGenerationComplete(true);
     }
-  }, [isLoaded, isGenerating, initialGenerationComplete]);
+  }, [isLoaded, initialGenerationComplete]);
+
+  // Monitor tile generation to help determine when initial generation is done
+  useEffect(() => {
+    if (isLoaded && generatedTiles.length > 0 && !initialGenerationComplete) {
+      // After we've generated at least one tile, we can consider it ready
+      console.log('✅ Tile generated, marking initial generation as complete');
+      setInitialGenerationComplete(true);
+    }
+  }, [generatedTiles, isLoaded, initialGenerationComplete]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -320,26 +337,6 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     });
 
     console.log("Ground plane registered with top surface at y=0");
-
-    // Add a visible ground plane for debugging, but only if scene exists
-    if (gameRef.current && gameRef.current.scene) {
-      const groundMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(100, 100),
-        new THREE.MeshBasicMaterial({
-          color: 0x444444,
-          wireframe: true,
-          opacity: 0.5,
-          transparent: true
-        })
-      );
-      groundMesh.rotation.x = -Math.PI / 2; // Rotate to be horizontal
-      groundMesh.position.y = 0.01; // Slightly above ground level
-      gameRef.current.scene.add(groundMesh);
-
-      console.log("Debug ground mesh added at y=0.01");
-    } else {
-      console.log("Scene not available yet, skipping debug ground mesh");
-    }
   };
 
   const initializeGameWithScenario = () => {
@@ -502,9 +499,12 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   }
 
   // Show world generation loading screen during initial setup
-  if (!isLoaded && !isLoadingGame && !initialGenerationComplete) {
+  if (isLoaded === false || (isLoaded === true && !initialGenerationComplete)) {
     return (
-      <WorldGenerationLoading scenario={scenarioInfo} />
+      <WorldGenerationLoading 
+        scenario={scenarioInfo} 
+        onForceComplete={handleForceCompleteLoading}
+      />
     );
   }
 
