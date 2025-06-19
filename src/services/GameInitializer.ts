@@ -49,6 +49,11 @@ export class GameInitializer {
       console.log('🔧 Creating Character...');
       gameRef.character = new Character(characterCustomization);
       
+      // Critical null check for character
+      if (!gameRef.character) {
+        throw new Error('Failed to create character - Character constructor returned null');
+      }
+      
       console.log('🔧 Creating InputManager...');
       gameRef.inputManager = new InputManager();
       
@@ -66,6 +71,11 @@ export class GameInitializer {
 
       console.log('🔧 Creating EnemyManager...');
       gameRef.enemyManager = new EnemyManager(gameRef.renderer.scene, gameRef.character.getInventorySystem());
+
+      // Critical null check for enemy manager
+      if (!gameRef.enemyManager) {
+        throw new Error('Failed to create enemy manager - EnemyManager constructor returned null');
+      }
 
       console.log('✅ All game components created successfully');
 
@@ -133,17 +143,21 @@ export class GameInitializer {
           console.log('⚠️ No scenario data found, using default generation');
         }
         
-        // Restore player position and rotation
-        const pos = gameData.game.player_position;
-        const rot = gameData.game.player_rotation;
-        
-        console.log('👤 Restoring player to position:', pos);
-        gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
-        gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
-        console.log('✅ Player position restored');
+        // Restore player position and rotation - with null checks
+        if (gameRef.character && gameRef.character.mesh) {
+          const pos = gameData.game.player_position;
+          const rot = gameData.game.player_rotation;
+          
+          console.log('👤 Restoring player to position:', pos);
+          gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
+          gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+          console.log('✅ Player position restored');
+        } else {
+          console.error('❌ Cannot restore player position - character or character.mesh is null');
+        }
 
         // Restore health state
-        if (gameData.game.health_data) {
+        if (gameData.game.health_data && gameRef.character) {
           console.log('❤️ Restoring health state');
           const healthSystem = gameRef.character.getHealthSystem();
           const healthData = gameData.game.health_data;
@@ -161,7 +175,7 @@ export class GameInitializer {
         }
 
         // Restore skills
-        if (gameData.skills && gameData.skills.length > 0) {
+        if (gameData.skills && gameData.skills.length > 0 && gameRef.character) {
           console.log('📈 Restoring skills');
           const experienceSystem = gameRef.character.getExperienceSystem();
           const skillData: any = {};
@@ -177,7 +191,7 @@ export class GameInitializer {
         }
 
         // Restore inventory
-        if (gameData.inventory && gameData.inventory.length > 0) {
+        if (gameData.inventory && gameData.inventory.length > 0 && gameRef.character) {
           console.log('🎒 Restoring inventory');
           const inventorySystem = gameRef.character.getInventorySystem();
           // Clear existing inventory first
@@ -192,7 +206,7 @@ export class GameInitializer {
         }
 
         // Restore equipment
-        if (gameData.equipment && gameData.equipment.length > 0) {
+        if (gameData.equipment && gameData.equipment.length > 0 && gameRef.character) {
           console.log('⚔️ Restoring equipment');
           const equipmentManager = gameRef.character.getEquipmentManager();
           
@@ -244,6 +258,7 @@ export class GameInitializer {
         setTimeout(() => {
           console.log('🌍 Starting background world generation...');
           if (gameRef.mapManager) {
+            const pos = gameData.game.player_position;
             gameRef.mapManager.updateAroundPosition(new THREE.Vector3(pos.x, pos.y, pos.z)).catch(error => {
               console.error('Background generation error:', error);
             });
@@ -309,6 +324,11 @@ export class GameInitializer {
       console.log('🔧 Creating Character...');
       gameRef.character = new Character(characterCustomization);
       
+      // Critical null check for character
+      if (!gameRef.character) {
+        throw new Error('Failed to create character - Character constructor returned null');
+      }
+      
       console.log('🔧 Creating InputManager...');
       gameRef.inputManager = new InputManager();
       
@@ -326,6 +346,11 @@ export class GameInitializer {
 
       console.log('🔧 Creating EnemyManager...');
       gameRef.enemyManager = new EnemyManager(gameRef.renderer.scene, gameRef.character.getInventorySystem());
+
+      // Critical null check for enemy manager
+      if (!gameRef.enemyManager) {
+        throw new Error('Failed to create enemy manager - EnemyManager constructor returned null');
+      }
 
       console.log('✅ All game components created successfully');
 
@@ -378,17 +403,21 @@ export class GameInitializer {
       if (gameData) {
         console.log('🔄 Applying loaded game data...');
         
-        // Restore player position and rotation
-        const pos = gameData.game.player_position;
-        const rot = gameData.game.player_rotation;
-        
-        console.log('👤 Restoring player to position:', pos);
-        gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
-        gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
-        console.log('✅ Player position restored');
+        // Restore player position and rotation - with null checks
+        if (gameRef.character && gameRef.character.mesh) {
+          const pos = gameData.game.player_position;
+          const rot = gameData.game.player_rotation;
+          
+          console.log('👤 Restoring player to position:', pos);
+          gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
+          gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+          console.log('✅ Player position restored');
+        } else {
+          console.error('❌ Cannot restore player position - character or character.mesh is null');
+        }
 
         // Restore health state
-        if (gameData.game.health_data) {
+        if (gameData.game.health_data && gameRef.character) {
           console.log('❤️ Restoring health state');
           const healthSystem = gameRef.character.getHealthSystem();
           const healthData = gameData.game.health_data;
@@ -406,7 +435,7 @@ export class GameInitializer {
         }
 
         // Restore skills
-        if (gameData.skills && gameData.skills.length > 0) {
+        if (gameData.skills && gameData.skills.length > 0 && gameRef.character) {
           console.log('📈 Restoring skills');
           const experienceSystem = gameRef.character.getExperienceSystem();
           const skillData: any = {};
@@ -422,7 +451,7 @@ export class GameInitializer {
         }
 
         // Restore inventory
-        if (gameData.inventory && gameData.inventory.length > 0) {
+        if (gameData.inventory && gameData.inventory.length > 0 && gameRef.character) {
           console.log('🎒 Restoring inventory');
           const inventorySystem = gameRef.character.getInventorySystem();
           // Clear existing inventory first
@@ -437,7 +466,7 @@ export class GameInitializer {
         }
 
         // Restore equipment
-        if (gameData.equipment && gameData.equipment.length > 0) {
+        if (gameData.equipment && gameData.equipment.length > 0 && gameRef.character) {
           console.log('⚔️ Restoring equipment');
           const equipmentManager = gameRef.character.getEquipmentManager();
           
@@ -482,6 +511,7 @@ export class GameInitializer {
         setTimeout(() => {
           console.log('🌍 Starting background world generation...');
           if (gameRef.mapManager) {
+            const pos = gameData.game.player_position;
             gameRef.mapManager.updateAroundPosition(new THREE.Vector3(pos.x, pos.y, pos.z)).catch(error => {
               console.error('Background generation error:', error);
             });
@@ -539,19 +569,23 @@ export class GameInitializer {
       
       console.log('✅ Custom objects initialized for scenario:', scenarioId);
       
-      // Initialize enemy system with custom enemies
-      if (objectSet.objects.enemy && objectSet.objects.enemy.length > 0) {
+      // Initialize enemy system with custom enemies - with null check
+      if (gameRef.enemyManager && objectSet.objects.enemy && objectSet.objects.enemy.length > 0) {
         console.log('🐺 Registering custom enemies:', objectSet.objects.enemy.length);
         gameRef.enemyManager.registerCustomEnemies(objectSet.objects.enemy);
+      } else if (!gameRef.enemyManager) {
+        console.warn('⚠️ Cannot register custom enemies - enemyManager is null');
       }
       
-      // Initialize item system with custom items
+      // Initialize item system with custom items - with null check
       if (gameRef.character && objectSet.objects.item && objectSet.objects.item.length > 0) {
         console.log('🎁 Registering custom items:', objectSet.objects.item.length);
         gameRef.character.getInventorySystem().registerCustomItems(objectSet.objects.item);
+      } else if (!gameRef.character) {
+        console.warn('⚠️ Cannot register custom items - character is null');
       }
       
-      // Initialize weapon/tool system with custom equipment
+      // Initialize weapon/tool system with custom equipment - with null check
       if (gameRef.character) {
         const equipmentManager = gameRef.character.getEquipmentManager();
         
@@ -564,18 +598,24 @@ export class GameInitializer {
           console.log('🔨 Registering custom tools:', objectSet.objects.tool.length);
           equipmentManager.registerCustomTools(objectSet.objects.tool);
         }
+      } else {
+        console.warn('⚠️ Cannot register custom equipment - character is null');
       }
       
-      // Register custom vegetation with map manager
-      if (objectSet.objects.vegetation && objectSet.objects.vegetation.length > 0) {
+      // Register custom vegetation with map manager - with null check
+      if (gameRef.mapManager && objectSet.objects.vegetation && objectSet.objects.vegetation.length > 0) {
         console.log('🌳 Registering custom vegetation:', objectSet.objects.vegetation.length);
         gameRef.mapManager.registerCustomVegetation(objectSet.objects.vegetation);
+      } else if (!gameRef.mapManager) {
+        console.warn('⚠️ Cannot register custom vegetation - mapManager is null');
       }
       
-      // Register custom structures with map manager
-      if (objectSet.objects.structure && objectSet.objects.structure.length > 0) {
+      // Register custom structures with map manager - with null check
+      if (gameRef.mapManager && objectSet.objects.structure && objectSet.objects.structure.length > 0) {
         console.log('🏛️ Registering custom structures:', objectSet.objects.structure.length);
         gameRef.mapManager.registerCustomStructures(objectSet.objects.structure);
+      } else if (!gameRef.mapManager) {
+        console.warn('⚠️ Cannot register custom structures - mapManager is null');
       }
       
     } catch (error) {
