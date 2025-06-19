@@ -18,6 +18,7 @@ import { InteractionPrompt } from './GameUI/InteractionPrompt';
 import { ObjectInteractionPrompt } from './GameUI/ObjectInteractionPrompt';
 import { GameStatus } from './GameUI/GameStatus';
 import { LoadingScreen } from './GameUI/LoadingScreen';
+import { WorldGenerationLoading } from './GameUI/WorldGenerationLoading';
 import { MapTile } from '../types/MapTypes';
 import { CharacterCustomization } from '../types/CharacterTypes';
 import { useGameState } from '../hooks/useGameState';
@@ -45,6 +46,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   const uiState = useUIState();
   const [generatedTiles, setGeneratedTiles] = React.useState<Array<{tile: MapTile, description: string}>>([]);
   const [scenarioInfo, setScenarioInfo] = useState<GameScenario | null>(scenario || null);
+  const [initialGenerationComplete, setInitialGenerationComplete] = useState(false);
 
   const {
     gameRef,
@@ -150,6 +152,18 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       GameInitializer.cleanup(gameRef.current);
     };
   }, [isLoadingGame, gameData, mountRef.current, scenario]);
+
+  // Track initial world generation completion
+  useEffect(() => {
+    if (isLoaded && isGenerating) {
+      // If game is loaded but still generating, we're in the initial generation phase
+      console.log('🌍 Initial world generation in progress...');
+    } else if (isLoaded && !isGenerating && !initialGenerationComplete) {
+      // When generation stops and we haven't marked completion yet
+      console.log('✅ Initial world generation complete!');
+      setInitialGenerationComplete(true);
+    }
+  }, [isLoaded, isGenerating, initialGenerationComplete]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -471,7 +485,8 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     loadingError: !!loadingError,
     loadingStep,
     isUIActive,
-    isPointerLocked
+    isPointerLocked,
+    initialGenerationComplete
   });
 
   if (isLoadingGame) {
@@ -483,6 +498,13 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
         onStartFresh={handleStartFresh}
         onReturnToMenu={onReturnToMenu}
       />
+    );
+  }
+
+  // Show world generation loading screen during initial setup
+  if (!isLoaded && !isLoadingGame && !initialGenerationComplete) {
+    return (
+      <WorldGenerationLoading scenario={scenarioInfo} />
     );
   }
 
@@ -710,7 +732,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
 
       {/* API Key Notice */}
       {!import.meta.env.VITE_OPENAI_API_KEY && !isUIActive && (
-        <div className="absolute bottom-4 left-4 bg-yellow-900 bg-opacity-90 text-yellow-100 p-3 rounded-lg backdrop-blur-sm max-w-md">
+        <div className="absolute bottom-20 left-4 bg-yellow-900 bg-opacity-90 text-yellow-100 p-3 rounded-lg backdrop-blur-sm max-w-md">
           <div className="flex items-start gap-2">
             <Zap className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div className="text-xs">

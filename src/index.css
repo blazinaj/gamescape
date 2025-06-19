@@ -31,3 +31,36 @@
   background: #6b7280;
   border-color: #4b5563;
 }
+
+/* Animation for indeterminate progress bar */
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+    width: 50%;
+  }
+  100% {
+    transform: translateX(200%);
+    width: 50%;
+  }
+}
+
+.animate-progress-indeterminate {
+  animation: progress-indeterminate 2s ease-in-out infinite;
+}
+
+/* Floating animation for loading UI elements */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}

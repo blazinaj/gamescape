@@ -17,7 +17,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
   onReturnToMenu,
 }) => {
   return (
-    <div className="w-full h-screen bg-gradient-to-b from-sky-200 to-sky-400 flex items-center justify-center">
+    <div className="w-full h-screen bg-gradient-to-b from-gray-900 to-blue-900 flex items-center justify-center">
       <div className="bg-black bg-opacity-50 text-white p-8 rounded-lg backdrop-blur-sm text-center max-w-md">
         {loadingError ? (
           <>
@@ -52,6 +52,9 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
             <p className="text-gray-300 mb-4">{loadingStep}</p>
             <div className="text-sm text-gray-400 mb-4">
               This may take a moment while we restore your progress
+            </div>
+            <div className="w-full bg-gray-700 h-2 rounded-full overflow-hidden mt-6">
+              <div className="h-full bg-blue-600 animate-progress-indeterminate"></div>
             </div>
             <div className="mt-4">
               <button
