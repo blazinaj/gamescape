@@ -364,7 +364,7 @@ export class SaveSystem {
 
       if (gameError) throw gameError;
 
-      // Save/update map tiles
+      // Convert map tiles to database format
       const tileData: any[] = [];
       mapTiles.forEach((tile) => {
         tileData.push({

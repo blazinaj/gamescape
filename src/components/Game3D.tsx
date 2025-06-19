@@ -44,11 +44,13 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   const mountRef = useRef<HTMLDivElement>(null);
   const gameState = useGameState(gameId);
   const uiState = useUIState();
-  const [generatedTiles, setGeneratedTiles] = React.useState<Array<{tile: MapTile, description: string}>>([]);
+  const [generatedTiles, setGeneratedTiles] = useState<Array<{tile: MapTile, description: string}>>([]);
   const [scenarioInfo, setScenarioInfo] = useState<GameScenario | null>(scenario || null);
   const [initialGenerationComplete, setInitialGenerationComplete] = useState(false);
   const [forcedCompletion, setForcedCompletion] = useState(false);
   const [showLoadingLogs, setShowLoadingLogs] = useState(false);
+  const [debugLoadingInfo, setDebugLoadingInfo] = useState<string[]>([]);
+  const [loadingStartTime] = useState(Date.now());
 
   const {
     gameRef,
@@ -116,6 +118,15 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     setForcedCompletion(true);
     setInitialGenerationComplete(true);
     setShowLoadingLogs(true); // Show logs when forcing completion to help debugging
+    
+    // Add debug info
+    addDebugInfo('Force completion triggered manually');
+  };
+
+  // Add debug info for loading diagnostics
+  const addDebugInfo = (message: string) => {
+    const timestamp = Math.floor((Date.now() - loadingStartTime) / 1000);
+    setDebugLoadingInfo(prev => [...prev, `[${timestamp}s] ${message}`]);
   };
 
   // Load game data first (if gameId provided)
@@ -139,21 +150,26 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   useEffect(() => {
     if (isLoadingGame) {
       console.log('⏳ Still loading game data, skipping game initialization');
+      addDebugInfo('Waiting for game data to load');
       return;
     }
 
     if (!mountRef.current) {
       console.log('⏳ mountRef not ready yet, waiting...');
+      addDebugInfo('Waiting for mount reference to be ready');
       return;
     }
 
     console.log('🎮 Ready to initialize game components');
+    addDebugInfo('Initializing game components');
     
     if (scenario && !gameData) {
       // Initialize with scenario
+      addDebugInfo(`Initializing with scenario: ${scenario.name}`);
       initializeGameWithScenario();
     } else {
       // Initialize normally (with or without gameData)
+      addDebugInfo('Initializing game normally');
       initializeGame();
     }
 
@@ -163,25 +179,56 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     };
   }, [isLoadingGame, gameData, mountRef.current, scenario]);
 
-  // Track initial world generation completion
+  // Track initial world generation completion with better logging
   useEffect(() => {
     // Log state for debugging
     console.log(`🔍 Tracking generation - isLoaded: ${isLoaded}, isGenerating: ${isGenerating}, initialGenerationComplete: ${initialGenerationComplete}, forcedCompletion: ${forcedCompletion}, tiles: ${generatedTiles.length}`);
+    addDebugInfo(`Status update - loaded: ${isLoaded}, generating: ${isGenerating}, tiles: ${generatedTiles.length}`);
     
     if (isLoaded && !initialGenerationComplete) {
-      if (!isGenerating || generatedTiles.length > 0 || forcedCompletion) {
-        // When game is loaded and either we're not generating, have tiles, or forced completion
-        console.log('✅ Marking initial world generation as complete');
+      // Improved completion logic
+      if (forcedCompletion) {
+        // Force completion was triggered
+        console.log('✅ Marking generation complete due to forced completion');
+        addDebugInfo('Force completion triggered');
         setInitialGenerationComplete(true);
+        return;
+      }
+      
+      if (generatedTiles.length > 0) {
+        // We have generated at least one tile
+        console.log('✅ Marking generation complete - tiles generated:', generatedTiles.length);
+        addDebugInfo(`Tiles generated: ${generatedTiles.length}`);
+        setInitialGenerationComplete(true);
+        return;
+      }
+      
+      if (!isGenerating && isLoaded) {
+        // If we're not generating and the game is loaded
+        console.log('✅ Marking generation complete - not generating and game is loaded');
+        addDebugInfo('Not generating and game is loaded');
+        setInitialGenerationComplete(true);
+        return;
+      }
+      
+      // Check for timeout
+      const timeElapsed = (Date.now() - loadingStartTime) / 1000;
+      if (timeElapsed > 25) {
+        // Force complete after 25 seconds as a safety measure
+        console.log(`⏱️ Forcing completion after ${timeElapsed}s timeout`);
+        addDebugInfo(`Timeout-based force completion after ${timeElapsed}s`);
+        setInitialGenerationComplete(true);
+        setForcedCompletion(true);
       }
     }
   }, [isLoaded, isGenerating, initialGenerationComplete, forcedCompletion, generatedTiles]);
 
-  // Monitor tile generation to help determine when initial generation is done
+  // Separate effect just for tile generation monitoring
   useEffect(() => {
     if (isLoaded && generatedTiles.length > 0 && !initialGenerationComplete) {
       // After we've generated at least one tile, we can consider it ready
       console.log(`✅ ${generatedTiles.length} tiles generated, marking initial generation as complete`);
+      addDebugInfo(`${generatedTiles.length} tiles generated`);
       setInitialGenerationComplete(true);
     }
   }, [generatedTiles, isLoaded, initialGenerationComplete]);
@@ -192,64 +239,34 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     onSave: () => uiState.setShowSaveUI(true),
   });
 
-  // Handle interactions
-  useEffect(() => {
-    const handleInteraction = (event: KeyboardEvent) => {
-      if (event.code.toLowerCase() === 'keye' && !isUIActive) {
-        // Prioritize NPC interactions over object interactions
-        if (closestNPC && !uiState.activeConversation) {
-          console.log('🗣️ Starting conversation with NPC:', closestNPC.data.name);
-          uiState.setActiveConversation(closestNPC);
-          // Update NPC state
-          setNpcStates(prev => {
-            const newStates = new Map(prev);
-            const currentState = newStates.get(closestNPC.data.id) || {
-              npc_id: closestNPC.data.id,
-              has_talked: false,
-              conversation_count: 0
-            };
-            newStates.set(closestNPC.data.id, {
-              ...currentState,
-              has_talked: true,
-              conversation_count: currentState.conversation_count + 1,
-              last_interaction: new Date().toISOString()
-            });
-            return newStates;
-          });
-        } else if (closestObject && !uiState.activeObjectInteraction) {
-          console.log('📦 Interacting with object:', closestObject.name);
-          uiState.setActiveObjectInteraction(closestObject);
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleInteraction);
-    return () => document.removeEventListener('keydown', handleInteraction);
-  }, [closestNPC, closestObject, uiState.activeConversation, uiState.activeObjectInteraction, isUIActive, uiState, setNpcStates]);
-
   const loadGameData = async (gameId: string) => {
     console.log('🔄 === STARTING LOAD PROCESS ===');
     setIsLoadingGame(true);
     setLoadingError(null);
     setLoadingStep('Connecting to save system...');
+    addDebugInfo('Starting game data load');
     
     const loadingTimeout = setTimeout(() => {
       console.error('⏰ Loading timed out after 15 seconds');
       setLoadingError('Loading timed out. The save system may be unavailable.');
       setIsLoadingGame(false);
+      addDebugInfo('Loading timed out');
     }, 15000);
 
     try {
       setLoadingStep('Loading complete game data...');
+      addDebugInfo('Loading game data from server');
       const saveData = await GameLoader.loadGameData(gameId);
       
       setLoadingStep('Processing game data...');
       setGameData(saveData);
       setCurrentBiome(saveData.game.current_biome);
+      addDebugInfo('Game data loaded successfully');
 
       // Restore character customization
       if (saveData.game.character_customization) {
         setCharacterCustomization(saveData.game.character_customization);
+        addDebugInfo('Character customization restored');
       }
 
       // Restore NPC states
@@ -259,6 +276,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       });
       setNpcStates(npcStateMap);
       console.log('✅ NPC states restored:', npcStateMap.size, 'NPCs');
+      addDebugInfo(`${npcStateMap.size} NPC states restored`);
 
       // Load scenario data if available
       if (saveData.game.scenario_data) {
@@ -273,6 +291,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
           difficulty: 'Medium',
           features: ['Saved world', 'Custom adventure']
         });
+        addDebugInfo('Scenario data loaded from save');
       }
 
       setLoadingStep('Almost ready...');
@@ -281,21 +300,25 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       clearTimeout(loadingTimeout);
       setIsLoadingGame(false);
       setLoadingStep('Complete!');
+      addDebugInfo('Load process complete');
       
     } catch (error) {
       console.error('❌ Failed to load game:', error);
       clearTimeout(loadingTimeout);
       setLoadingError(`Failed to load game: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsLoadingGame(false);
+      addDebugInfo('Game load failed with error');
     }
   };
 
   const initializeGame = () => {
     if (!mountRef.current) {
       console.error('❌ mountRef.current is still null during initialization!');
+      addDebugInfo('Mount reference is null during initialization');
       return;
     }
 
+    addDebugInfo('Starting normal game initialization');
     GameInitializer.initializeGame(
       gameRef.current,
       mountRef.current,
@@ -307,10 +330,12 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
           console.log('🎯 Tile generated:', tile.id);
           setGeneratedTiles(prev => [...prev, { tile, description }]);
           setIsGenerating(false);
+          addDebugInfo(`Tile generated: ${tile.id}`);
         },
         onGenerationStart: (x, z) => {
           console.log('🔄 Starting tile generation at:', x, z);
           setIsGenerating(true);
+          addDebugInfo(`Starting tile generation at: (${x}, ${z})`);
         },
         setCurrentBiome,
         setNearbyNPCs,
@@ -341,15 +366,18 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     });
 
     console.log("Ground plane registered with top surface at y=0");
+    addDebugInfo('Ground collision plane registered');
   };
 
   const initializeGameWithScenario = () => {
     if (!mountRef.current || !scenario) {
       console.error('❌ mountRef.current is null or scenario is missing during initialization!');
+      addDebugInfo('Mount reference or scenario missing during initialization');
       return;
     }
 
     console.log('🌍 Initializing game with scenario:', scenario.name);
+    addDebugInfo(`Initializing with scenario: ${scenario.name}`);
 
     GameInitializer.initializeGameWithScenario(
       gameRef.current,
@@ -363,10 +391,12 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
           console.log('🎯 Tile generated:', tile.id);
           setGeneratedTiles(prev => [...prev, { tile, description }]);
           setIsGenerating(false);
+          addDebugInfo(`Tile generated: ${tile.id}`);
         },
         onGenerationStart: (x, z) => {
           console.log('🔄 Starting tile generation at:', x, z);
           setIsGenerating(true);
+          addDebugInfo(`Starting tile generation at: (${x}, ${z})`);
         },
         setCurrentBiome,
         setNearbyNPCs,
@@ -395,6 +425,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     });
 
     console.log("Ground plane registered with top surface at y=0");
+    addDebugInfo('Ground collision plane registered');
   };
 
   const handleCharacterCustomization = (customization: CharacterCustomization) => {
@@ -779,7 +810,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       )}
 
       {/* Loading Debug Info */}
-      {showLoadingLogs && (
+      {(showLoadingLogs || forcedCompletion) && (
         <div className="absolute bottom-40 left-4 bg-gray-900 bg-opacity-90 text-gray-100 p-3 rounded-lg backdrop-blur-sm max-w-md">
           <div className="flex items-start gap-2">
             <div className="text-xs">
@@ -790,6 +821,15 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
               <div>Generating: {isGenerating ? 'Yes' : 'No'}</div>
               <div>Generated Tiles: {generatedTiles.length}</div>
               <div>Loading Game: {isLoadingGame ? 'Yes' : 'No'}</div>
+              
+              {debugLoadingInfo.length > 0 && (
+                <>
+                  <div className="mt-2 mb-1 font-medium border-t border-gray-700 pt-2">Event Log:</div>
+                  {debugLoadingInfo.slice(-10).map((log, index) => (
+                    <div key={index} className="text-xs text-gray-300">{log}</div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>
