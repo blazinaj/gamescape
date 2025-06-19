@@ -143,17 +143,31 @@ export class GameInitializer {
           console.log('⚠️ No scenario data found, using default generation');
         }
         
-        // Restore player position and rotation - with null checks
+        // Restore player position and rotation - with enhanced null checks
         if (gameRef.character && gameRef.character.mesh) {
           const pos = gameData.game.player_position;
           const rot = gameData.game.player_rotation;
           
-          console.log('👤 Restoring player to position:', pos);
-          gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
-          gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
-          console.log('✅ Player position restored');
+          // Validate position data
+          if (pos && typeof pos.x === 'number' && typeof pos.y === 'number' && typeof pos.z === 'number') {
+            console.log('👤 Restoring player to position:', pos);
+            gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
+          } else {
+            console.warn('⚠️ Invalid position data, using default spawn (0,0,0)');
+            gameRef.character.mesh.position.set(0, 0, 0);
+          }
+          
+          // Validate rotation data
+          if (rot && typeof rot.x === 'number' && typeof rot.y === 'number' && typeof rot.z === 'number' && typeof rot.w === 'number') {
+            gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+            console.log('✅ Player position and rotation restored');
+          } else {
+            console.warn('⚠️ Invalid rotation data, using default rotation');
+            gameRef.character.mesh.quaternion.set(0, 0, 0, 1);
+          }
         } else {
           console.error('❌ Cannot restore player position - character or character.mesh is null');
+          // Don't throw here, just use default position
         }
 
         // Restore health state
@@ -237,8 +251,12 @@ export class GameInitializer {
           });
         }
 
-        // Set the current game ID for saving
-        gameRef.saveSystem.setCurrentGameId(gameData.game.id);
+        // Set the current game ID for saving - with null check
+        if (gameRef.saveSystem) {
+          gameRef.saveSystem.setCurrentGameId(gameData.game.id);
+        } else {
+          console.error('❌ Cannot set current game ID - saveSystem is null');
+        }
 
         // Load saved tiles
         if (gameData.mapTiles.length > 0) {
@@ -259,7 +277,13 @@ export class GameInitializer {
           console.log('🌍 Starting background world generation...');
           if (gameRef.mapManager) {
             const pos = gameData.game.player_position;
-            gameRef.mapManager.updateAroundPosition(new THREE.Vector3(pos.x, pos.y, pos.z)).catch(error => {
+            // Use safe position values
+            const safePos = {
+              x: (pos && typeof pos.x === 'number') ? pos.x : 0,
+              y: (pos && typeof pos.y === 'number') ? pos.y : 0,
+              z: (pos && typeof pos.z === 'number') ? pos.z : 0
+            };
+            gameRef.mapManager.updateAroundPosition(new THREE.Vector3(safePos.x, safePos.y, safePos.z)).catch(error => {
               console.error('Background generation error:', error);
             });
           }
@@ -403,17 +427,31 @@ export class GameInitializer {
       if (gameData) {
         console.log('🔄 Applying loaded game data...');
         
-        // Restore player position and rotation - with null checks
+        // Restore player position and rotation - with enhanced null checks
         if (gameRef.character && gameRef.character.mesh) {
           const pos = gameData.game.player_position;
           const rot = gameData.game.player_rotation;
           
-          console.log('👤 Restoring player to position:', pos);
-          gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
-          gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
-          console.log('✅ Player position restored');
+          // Validate position data
+          if (pos && typeof pos.x === 'number' && typeof pos.y === 'number' && typeof pos.z === 'number') {
+            console.log('👤 Restoring player to position:', pos);
+            gameRef.character.mesh.position.set(pos.x, pos.y, pos.z);
+          } else {
+            console.warn('⚠️ Invalid position data, using default spawn (0,0,0)');
+            gameRef.character.mesh.position.set(0, 0, 0);
+          }
+          
+          // Validate rotation data
+          if (rot && typeof rot.x === 'number' && typeof rot.y === 'number' && typeof rot.z === 'number' && typeof rot.w === 'number') {
+            gameRef.character.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+            console.log('✅ Player position and rotation restored');
+          } else {
+            console.warn('⚠️ Invalid rotation data, using default rotation');
+            gameRef.character.mesh.quaternion.set(0, 0, 0, 1);
+          }
         } else {
           console.error('❌ Cannot restore player position - character or character.mesh is null');
+          // Don't throw here, just use default position
         }
 
         // Restore health state
@@ -497,8 +535,12 @@ export class GameInitializer {
           });
         }
 
-        // Set the current game ID for saving
-        gameRef.saveSystem.setCurrentGameId(gameData.game.id);
+        // Set the current game ID for saving - with null check
+        if (gameRef.saveSystem) {
+          gameRef.saveSystem.setCurrentGameId(gameData.game.id);
+        } else {
+          console.error('❌ Cannot set current game ID - saveSystem is null');
+        }
 
         // Load saved tiles
         if (gameData.mapTiles.length > 0) {
@@ -512,7 +554,13 @@ export class GameInitializer {
           console.log('🌍 Starting background world generation...');
           if (gameRef.mapManager) {
             const pos = gameData.game.player_position;
-            gameRef.mapManager.updateAroundPosition(new THREE.Vector3(pos.x, pos.y, pos.z)).catch(error => {
+            // Use safe position values
+            const safePos = {
+              x: (pos && typeof pos.x === 'number') ? pos.x : 0,
+              y: (pos && typeof pos.y === 'number') ? pos.y : 0,
+              z: (pos && typeof pos.z === 'number') ? pos.z : 0
+            };
+            gameRef.mapManager.updateAroundPosition(new THREE.Vector3(safePos.x, safePos.y, safePos.z)).catch(error => {
               console.error('Background generation error:', error);
             });
           }

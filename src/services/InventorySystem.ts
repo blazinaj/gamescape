@@ -176,7 +176,7 @@ export class InventorySystem {
         name: item.name,
         type: item.type,
         description: item.description,
-        icon: item.appearance.icon || '📦',
+        icon: item.appearance?.icon || '📦', // Use optional chaining and provide fallback
         stackable: item.properties.stackable,
         maxStack: item.properties.maxStack,
         value: item.properties.value,

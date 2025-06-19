@@ -2,18 +2,17 @@ import * as THREE from 'three';
 import { Enemy } from '../components/Enemy';
 import { EnemyData } from '../types/EnemyTypes';
 import { InventorySystem } from './InventorySystem';
-import { notificationSystem } from './NotificationSystem';
 import { CustomEnemy } from '../types/CustomEnemyTypes';
 
 export class EnemyManager {
+  private enemies: Enemy[] = [];
   private scene: THREE.Scene;
-  private enemies = new Map<string, Enemy>();
   private inventorySystem: InventorySystem;
-  private spawnPoints = new Set<string>();
-  private lastSpawnTime = 0;
-  private spawnCooldown = 10000; // 10 seconds between spawns
-  private maxEnemies = 8; // Maximum enemies at once
-  private customEnemyTypes: Map<string, CustomEnemy> = new Map();
+  private spawnCooldown: number = 5000; // 5 seconds between spawns
+  private lastSpawnTime: number = 0;
+  private maxEnemies: number = 20;
+  private spawnRadius: number = 50;
+  private customEnemies: Map<string, CustomEnemy> = new Map();
 
   constructor(scene: THREE.Scene, inventorySystem: InventorySystem) {
     this.scene = scene;
@@ -22,355 +21,164 @@ export class EnemyManager {
 
   registerCustomEnemies(customEnemies: CustomEnemy[]): void {
     customEnemies.forEach(enemy => {
-      this.customEnemyTypes.set(enemy.id, enemy);
-      console.log(`👹 Registered custom enemy type: ${enemy.name}`);
+      this.customEnemies.set(enemy.id, enemy);
+      console.log(`🐺 Registered custom enemy: ${enemy.name}`);
     });
   }
 
   update(playerPosition: THREE.Vector3, deltaTime: number): void {
-    const now = Date.now();
-
     // Update existing enemies
-    this.enemies.forEach((enemy, id) => {
-      if (enemy.isDead()) {
-        // Handle death - remove after delay
-        setTimeout(() => {
-          this.removeEnemy(id);
-        }, 3000);
-      } else {
-        enemy.update(playerPosition, deltaTime);
-      }
+    this.enemies.forEach(enemy => {
+      enemy.update(playerPosition, deltaTime);
     });
 
-    // Spawn new enemies
-    if (now - this.lastSpawnTime > this.spawnCooldown && this.enemies.size < this.maxEnemies) {
+    // Remove dead enemies
+    this.enemies = this.enemies.filter(enemy => {
+      if (enemy.isDead()) {
+        this.scene.remove(enemy.mesh);
+        enemy.dispose();
+        return false;
+      }
+      return true;
+    });
+
+    // Try to spawn new enemies
+    const now = Date.now();
+    if (now - this.lastSpawnTime > this.spawnCooldown && this.enemies.length < this.maxEnemies) {
       this.trySpawnEnemy(playerPosition);
       this.lastSpawnTime = now;
     }
   }
 
   private trySpawnEnemy(playerPosition: THREE.Vector3): void {
-    // Find spawn position away from player but not too far
-    const spawnDistance = 15 + Math.random() * 10; // 15-25 units away
     const angle = Math.random() * Math.PI * 2;
+    const distance = this.spawnRadius * (0.5 + Math.random() * 0.5);
     
     const spawnPosition = new THREE.Vector3(
-      playerPosition.x + Math.cos(angle) * spawnDistance,
-      0, // Ground level
-      playerPosition.z + Math.sin(angle) * spawnDistance
+      playerPosition.x + Math.cos(angle) * distance,
+      playerPosition.y,
+      playerPosition.z + Math.sin(angle) * distance
     );
 
-    // Check if spawn point is already used
-    const spawnKey = `${Math.floor(spawnPosition.x / 5)}_${Math.floor(spawnPosition.z / 5)}`;
-    if (this.spawnPoints.has(spawnKey)) return;
-
-    // Create enemy - chance to use custom enemy if available
+    // Randomly choose between default and custom enemies
+    const useCustomEnemy = Math.random() < 0.3 && this.customEnemies.size > 0;
+    
     let enemyData: EnemyData;
     
-    if (this.customEnemyTypes.size > 0 && Math.random() < 0.7) {
-      // Use custom enemy
-      const customEnemies = Array.from(this.customEnemyTypes.values());
-      const selectedCustomEnemy = customEnemies[Math.floor(Math.random() * customEnemies.length)];
-      
-      enemyData = this.convertCustomEnemyToStandard(selectedCustomEnemy, spawnPosition);
-      console.log(`👹 Spawning custom enemy: ${enemyData.name}`);
+    if (useCustomEnemy) {
+      const customEnemyArray = Array.from(this.customEnemies.values());
+      const randomCustomEnemy = customEnemyArray[Math.floor(Math.random() * customEnemyArray.length)];
+      enemyData = this.convertCustomEnemyToStandard(randomCustomEnemy);
     } else {
-      // Use standard enemy
-      enemyData = this.generateRandomEnemy(spawnPosition);
-      console.log(`👹 Spawning standard enemy: ${enemyData.name}`);
+      enemyData = this.getRandomDefaultEnemy();
     }
-    
+
     const enemy = new Enemy(enemyData, spawnPosition);
-    
-    this.enemies.set(enemyData.id, enemy);
+    this.enemies.push(enemy);
     this.scene.add(enemy.mesh);
-    this.spawnPoints.add(spawnKey);
-
-    console.log(`👹 Spawned ${enemyData.name} at distance ${spawnDistance.toFixed(1)} from player`);
+    
+    console.log(`🐺 Spawned ${enemyData.name} at position:`, spawnPosition);
   }
-  
-  private convertCustomEnemyToStandard(customEnemy: CustomEnemy, position: THREE.Vector3): EnemyData {
+
+  private convertCustomEnemyToStandard(customEnemy: CustomEnemy): EnemyData {
     return {
-      id: `enemy_instance_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      id: customEnemy.id,
       name: customEnemy.name,
-      type: customEnemy.type,
-      maxHealth: customEnemy.stats.health,
-      currentHealth: customEnemy.stats.health,
-      damage: customEnemy.stats.damage,
-      speed: customEnemy.stats.speed,
-      attackRange: customEnemy.stats.attackRange,
-      attackCooldown: customEnemy.stats.attackSpeed ? Math.floor(1000 / customEnemy.stats.attackSpeed) : 1000,
-      experience: customEnemy.stats.experienceValue,
-      drops: customEnemy.drops.map(drop => ({
-        itemId: drop.itemId,
-        quantity: drop.minQuantity,
-        chance: drop.chance
-      })),
-      behavior: customEnemy.behavior.isAggressive ? 'aggressive' : 'defensive',
-      detectionRange: customEnemy.stats.detectRange,
+      type: customEnemy.type as any,
+      maxHealth: customEnemy.stats?.health || 100,
+      damage: customEnemy.stats?.damage || 20,
+      speed: customEnemy.stats?.speed || 2,
+      attackRange: customEnemy.stats?.attackRange || 2,
+      attackCooldown: 1000,
+      experience: customEnemy.stats?.experience || 50,
+      behavior: 'aggressive',
+      detectionRange: customEnemy.stats?.detectRange || 8,
       appearance: {
-        bodyColor: customEnemy.appearance.primaryColor || '#8B4513',
-        scale: customEnemy.appearance.size || 1.0,
-        modelType: customEnemy.type
+        scale: customEnemy.appearance?.scale || 1,
+        bodyColor: customEnemy.appearance?.color || '#8B4513',
+        eyeColor: customEnemy.appearance?.eyeColor || '#FF0000'
       }
     };
   }
 
-  private generateRandomEnemy(position: THREE.Vector3): EnemyData {
-    const enemyTypes = ['goblin', 'orc', 'skeleton', 'wolf', 'spider'] as const;
-    const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+  private getRandomDefaultEnemy(): EnemyData {
+    const enemyTypes = ['goblin', 'orc', 'skeleton', 'wolf', 'spider'];
+    const randomType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
     
-    const baseStats = this.getEnemyBaseStats(type);
+    const baseStats = {
+      goblin: { health: 60, damage: 15, speed: 3, experience: 25 },
+      orc: { health: 120, damage: 30, speed: 2, experience: 50 },
+      skeleton: { health: 80, damage: 20, speed: 2.5, experience: 35 },
+      wolf: { health: 70, damage: 25, speed: 4, experience: 30 },
+      spider: { health: 40, damage: 10, speed: 3.5, experience: 20 }
+    };
+
+    const stats = baseStats[randomType as keyof typeof baseStats];
     
     return {
-      id: `enemy_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      name: this.generateEnemyName(type),
-      type,
-      ...baseStats,
-      drops: this.generateDrops(type),
+      id: `${randomType}_${Date.now()}`,
+      name: randomType.charAt(0).toUpperCase() + randomType.slice(1),
+      type: randomType as any,
+      maxHealth: stats.health,
+      damage: stats.damage,
+      speed: stats.speed,
+      attackRange: 2,
+      attackCooldown: 1000,
+      experience: stats.experience,
+      behavior: 'aggressive',
+      detectionRange: 8,
       appearance: {
-        bodyColor: this.getEnemyColor(type),
-        scale: 0.8 + Math.random() * 0.4, // 0.8 to 1.2 scale
-        modelType: type
+        scale: 0.8 + Math.random() * 0.4,
+        bodyColor: this.getEnemyColor(randomType),
+        eyeColor: '#FF0000'
       }
     };
-  }
-
-  private getEnemyBaseStats(type: string) {
-    const stats = {
-      goblin: {
-        maxHealth: 40,
-        damage: 8,
-        speed: 3,
-        attackRange: 1.5,
-        attackCooldown: 1200,
-        experience: 10,
-        behavior: 'aggressive' as const,
-        detectionRange: 8
-      },
-      orc: {
-        maxHealth: 80,
-        damage: 15,
-        speed: 2.5,
-        attackRange: 2,
-        attackCooldown: 1500,
-        experience: 25,
-        behavior: 'aggressive' as const,
-        detectionRange: 10
-      },
-      skeleton: {
-        maxHealth: 60,
-        damage: 12,
-        speed: 2,
-        attackRange: 1.8,
-        attackCooldown: 1000,
-        experience: 20,
-        behavior: 'aggressive' as const,
-        detectionRange: 12
-      },
-      wolf: {
-        maxHealth: 50,
-        damage: 10,
-        speed: 4,
-        attackRange: 1.2,
-        attackCooldown: 800,
-        experience: 15,
-        behavior: 'aggressive' as const,
-        detectionRange: 6
-      },
-      spider: {
-        maxHealth: 35,
-        damage: 6,
-        speed: 3.5,
-        attackRange: 1,
-        attackCooldown: 600,
-        experience: 12,
-        behavior: 'aggressive' as const,
-        detectionRange: 5
-      },
-      troll: {
-        maxHealth: 150,
-        damage: 25,
-        speed: 1.5,
-        attackRange: 3,
-        attackCooldown: 2500,
-        experience: 50,
-        behavior: 'aggressive' as const,
-        detectionRange: 15
-      }
-    };
-
-    return stats[type as keyof typeof stats] || stats.goblin;
-  }
-
-  private generateEnemyName(type: string): string {
-    const names = {
-      goblin: ['Grax', 'Snik', 'Bogg', 'Zitt', 'Krex'],
-      orc: ['Gorthak', 'Drogul', 'Thokk', 'Grimjaw', 'Bloodfang'],
-      skeleton: ['Boneclaw', 'Rattlebones', 'Grimskull', 'Deathrattle', 'Soulless'],
-      wolf: ['Shadowfang', 'Greymaw', 'Nighthowl', 'Bloodpaw', 'Darkclaw'],
-      spider: ['Webweaver', 'Poisonfang', 'Blackwidow', 'Silkspinner', 'Venomstrike'],
-      troll: ['Rockfist', 'Stonehide', 'Boulderbash', 'Ironjaw', 'Mountainbane']
-    };
-
-    const typeNames = names[type as keyof typeof names] || names.goblin;
-    return typeNames[Math.floor(Math.random() * typeNames.length)];
   }
 
   private getEnemyColor(type: string): string {
     const colors = {
-      goblin: '#228B22', // Green
-      orc: '#8B4513',    // Brown
-      skeleton: '#F5F5DC', // Bone white
-      wolf: '#696969',   // Gray
-      spider: '#000000', // Black
-      troll: '#708090'   // Slate gray
+      goblin: '#4A7C59',
+      orc: '#8B4513',
+      skeleton: '#F5F5DC',
+      wolf: '#8B4513',
+      spider: '#2F2F2F'
     };
-
-    return colors[type as keyof typeof colors] || '#696969';
-  }
-
-  private generateDrops(type: string) {
-    const commonDrops = [
-      { itemId: 'wood_log', quantity: 1, chance: 0.3 },
-      { itemId: 'stone', quantity: 2, chance: 0.4 },
-      { itemId: 'berry', quantity: 1, chance: 0.2 }
-    ];
-
-    const rareDrops = {
-      goblin: [
-        { itemId: 'flint', quantity: 1, chance: 0.5 },
-        { itemId: 'old_coin', quantity: 1, chance: 0.1 }
-      ],
-      orc: [
-        { itemId: 'iron_ore', quantity: 1, chance: 0.3 },
-        { itemId: 'old_coin', quantity: 2, chance: 0.15 }
-      ],
-      skeleton: [
-        { itemId: 'crystal_shard', quantity: 1, chance: 0.2 },
-        { itemId: 'old_coin', quantity: 1, chance: 0.25 }
-      ],
-      wolf: [
-        { itemId: 'rope', quantity: 1, chance: 0.4 },
-        { itemId: 'berry', quantity: 2, chance: 0.6 }
-      ],
-      spider: [
-        { itemId: 'rope', quantity: 2, chance: 0.7 },
-        { itemId: 'crystal_shard', quantity: 1, chance: 0.1 }
-      ],
-      troll: [
-        { itemId: 'iron_ore', quantity: 3, chance: 0.8 },
-        { itemId: 'crystal_shard', quantity: 2, chance: 0.4 },
-        { itemId: 'old_coin', quantity: 5, chance: 0.6 }
-      ]
-    };
-
-    const typeDrops = rareDrops[type as keyof typeof rareDrops] || [];
-    return [...commonDrops, ...typeDrops];
-  }
-
-  killEnemy(enemyId: string, damageSource: string): void {
-    const enemy = this.enemies.get(enemyId);
-    if (!enemy || enemy.isDead()) return;
-
-    console.log(`💀 ${enemy.data.name} has been slain by ${damageSource}!`);
-
-    // Generate loot
-    const droppedItems: { name: string; icon: string; quantity: number }[] = [];
-    
-    enemy.data.drops.forEach(drop => {
-      if (Math.random() <= drop.chance) {
-        if (this.inventorySystem.addItem(drop.itemId, drop.quantity)) {
-          const itemStack = this.inventorySystem.getInventory().find(stack => stack.item.id === drop.itemId);
-          if (itemStack) {
-            droppedItems.push({
-              name: itemStack.item.name,
-              icon: itemStack.item.icon,
-              quantity: drop.quantity
-            });
-          }
-        }
-      }
-    });
-
-    // Show loot notification
-    if (droppedItems.length > 0) {
-      notificationSystem.showItemNotification(
-        `Defeated ${enemy.data.name}`,
-        droppedItems
-      );
-    }
-
-    // Mark enemy as dead (will be removed after delay)
-    enemy.takeDamage({ amount: 9999, type: 'physical', source: damageSource, isCritical: false });
-  }
-
-  private removeEnemy(enemyId: string): void {
-    const enemy = this.enemies.get(enemyId);
-    if (!enemy) return;
-
-    this.scene.remove(enemy.mesh);
-    this.enemies.delete(enemyId);
-
-    // Clear spawn point
-    const position = enemy.getPosition();
-    const spawnKey = `${Math.floor(position.x / 5)}_${Math.floor(position.z / 5)}`;
-    this.spawnPoints.delete(spawnKey);
-
-    console.log(`🗑️ Removed enemy ${enemyId}`);
-  }
-
-  getEnemiesInRange(position: THREE.Vector3, range: number): Enemy[] {
-    const enemiesInRange: Enemy[] = [];
-    
-    this.enemies.forEach(enemy => {
-      if (!enemy.isDead() && enemy.distanceTo(position) <= range) {
-        enemiesInRange.push(enemy);
-      }
-    });
-    
-    return enemiesInRange;
-  }
-
-  getClosestEnemy(position: THREE.Vector3, maxRange: number = Infinity): Enemy | null {
-    let closestEnemy: Enemy | null = null;
-    let closestDistance = maxRange;
-
-    this.enemies.forEach(enemy => {
-      if (!enemy.isDead()) {
-        const distance = enemy.distanceTo(position);
-        if (distance < closestDistance) {
-          closestEnemy = enemy;
-          closestDistance = distance;
-        }
-      }
-    });
-
-    return closestEnemy;
+    return colors[type as keyof typeof colors] || '#8B4513';
   }
 
   checkEnemyAttacks(playerPosition: THREE.Vector3): number {
     let totalDamage = 0;
-
+    
     this.enemies.forEach(enemy => {
-      if (enemy.canAttackPlayer() && enemy.distanceTo(playerPosition) <= enemy.data.attackRange) {
+      if (enemy.canAttackPlayer() && enemy.distanceTo(playerPosition) <= enemy.getCombatRadius()) {
         totalDamage += enemy.getDamage();
         console.log(`⚔️ ${enemy.data.name} attacks player for ${enemy.getDamage()} damage!`);
       }
     });
-
+    
     return totalDamage;
+  }
+
+  getEnemiesInRange(position: THREE.Vector3, range: number): Enemy[] {
+    return this.enemies.filter(enemy => 
+      !enemy.isDead() && enemy.distanceTo(position) <= range
+    );
   }
 
   clear(): void {
     this.enemies.forEach(enemy => {
       this.scene.remove(enemy.mesh);
+      enemy.dispose();
     });
-    this.enemies.clear();
-    this.spawnPoints.clear();
+    this.enemies = [];
+    this.customEnemies.clear();
   }
 
-  getAllEnemies(): Enemy[] {
-    return Array.from(this.enemies.values());
+  getEnemyCount(): number {
+    return this.enemies.length;
+  }
+
+  getAliveEnemyCount(): number {
+    return this.enemies.filter(enemy => !enemy.isDead()).length;
   }
 }
