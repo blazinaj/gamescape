@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, Sparkles, Mountain, Castle, TreePine, Globe } from 'lucide-react';
+import { Loader2, Sparkles, Mountain, Castle, TreePine, Globe, Check } from 'lucide-react';
 import { GameScenario } from '../ScenarioSelector';
 
 interface WorldGenerationLoadingProps {
@@ -11,28 +11,53 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
   const [loadingMessage, setLoadingMessage] = useState('Generating world...');
   const [progress, setProgress] = useState(0);
   const [timeoutTriggered, setTimeoutTriggered] = useState(false);
+  const [completed, setCompleted] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    
     // Simulate loading progress
     const interval = setInterval(() => {
+      if (!isMounted) return;
+      
       setProgress(prev => {
         // Slow down as we approach 100% to wait for actual generation
         if (prev >= 90) {
           return Math.min(99, prev + 0.2);
         }
-        return prev + Math.random() * 1.5;
+        return Math.min(90, prev + Math.random() * 1.5);
       });
     }, 200);
 
     // Set timeout to force completion after 20 seconds if generation is still stuck
     const forceTimeout = setTimeout(() => {
+      if (!isMounted) return;
+      
+      console.log('⏱️ 20-second timeout reached for world generation');
       setTimeoutTriggered(true);
       setProgress(100);
+      setCompleted(true);
+      
       if (onForceComplete) {
-        console.log('⏱️ Force completing world generation after timeout');
+        console.log('🚀 Calling onForceComplete callback from timeout');
         onForceComplete();
       }
     }, 20000);
+
+    // Add another stronger timeout at 40 seconds as a safety measure
+    const emergencyTimeout = setTimeout(() => {
+      if (!isMounted) return;
+      
+      console.log('⚠️ EMERGENCY 40-second timeout reached, forcing completion');
+      setTimeoutTriggered(true);
+      setProgress(100);
+      setCompleted(true);
+      
+      if (onForceComplete) {
+        console.log('🚨 Calling onForceComplete callback from emergency timeout');
+        onForceComplete();
+      }
+    }, 40000);
 
     // Update loading messages to provide context
     const messages = [
@@ -78,16 +103,29 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
     // Cycle through messages
     let messageIndex = 0;
     const messageInterval = setInterval(() => {
+      if (!isMounted) return;
+      
       messageIndex = (messageIndex + 1) % messages.length;
       setLoadingMessage(messages[messageIndex]);
     }, 3000);
 
     return () => {
+      isMounted = false;
       clearInterval(interval);
       clearInterval(messageInterval);
       clearTimeout(forceTimeout);
+      clearTimeout(emergencyTimeout);
     };
   }, [scenario, onForceComplete]);
+
+  // Auto-call onForceComplete when progress reaches 100%
+  useEffect(() => {
+    if (progress >= 100 && !completed && onForceComplete) {
+      console.log('🚀 Progress reached 100%, triggering completion');
+      setCompleted(true);
+      onForceComplete();
+    }
+  }, [progress, completed, onForceComplete]);
 
   // Select icon based on scenario theme
   const getIcon = () => {
@@ -134,8 +172,17 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
 
         {/* Loading message */}
         <div className="flex items-center justify-center gap-3 text-lg text-white mb-8">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
-          <p className="animate-pulse">{timeoutTriggered ? "Final preparations..." : loadingMessage}</p>
+          {progress >= 100 ? (
+            <>
+              <Check className="w-6 h-6 text-green-400" />
+              <p>World generation complete!</p>
+            </>
+          ) : (
+            <>
+              <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+              <p className="animate-pulse">{timeoutTriggered ? "Final preparations..." : loadingMessage}</p>
+            </>
+          )}
         </div>
 
         {/* Generation details */}

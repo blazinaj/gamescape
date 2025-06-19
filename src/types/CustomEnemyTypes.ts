@@ -20,6 +20,7 @@ export interface EnemyAppearance extends AppearanceProperties {
   hasWings?: boolean;
   weaponType?: string;
   armorType?: string;
+  icon?: string; // Added for display in UI
 }
 
 export interface EnemyStats {
@@ -30,9 +31,10 @@ export interface EnemyStats {
   speed: number;
   attackRange: number;
   attackSpeed: number;
-  experienceValue: number;
-  detectRange: number;
-  aggression: number; // 0-10, how likely to attack
+  experienceValue?: number; // Optional field
+  experience?: number; // Also support this field name
+  detectRange?: number; // Optional field
+  aggression?: number; // 0-10, how likely to attack
 }
 
 export interface EnemyBehavior {

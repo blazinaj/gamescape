@@ -47,6 +47,8 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   const [generatedTiles, setGeneratedTiles] = React.useState<Array<{tile: MapTile, description: string}>>([]);
   const [scenarioInfo, setScenarioInfo] = useState<GameScenario | null>(scenario || null);
   const [initialGenerationComplete, setInitialGenerationComplete] = useState(false);
+  const [forcedCompletion, setForcedCompletion] = useState(false);
+  const [showLoadingLogs, setShowLoadingLogs] = useState(false);
 
   const {
     gameRef,
@@ -82,21 +84,13 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
 
   const { isUIActive } = uiState;
 
-  // Auto-save functionality
+  // Auto-save functionality with improved settings
   const autoSaveState = useAutoSave({
     enabled: true,
-    interval: 30000, // 30 seconds
+    interval: 60000, // 60 seconds (increased to avoid too-frequent saves)
     onSave: handleSaveGame,
-    gameLoaded: isLoaded && !isLoadingGame
+    gameLoaded: isLoaded && !isLoadingGame && initialGenerationComplete
   });
-
-  // Force complete loading after waiting too long
-  const handleForceCompleteLoading = () => {
-    if (!initialGenerationComplete) {
-      console.log('🚀 Force completing world generation after timeout');
-      setInitialGenerationComplete(true);
-    }
-  };
 
   // Update input manager about UI state
   useEffect(() => {
@@ -115,6 +109,14 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     document.addEventListener('pointerlockchange', handlePointerLockChange);
     return () => document.removeEventListener('pointerlockchange', handlePointerLockChange);
   }, [setIsPointerLocked]);
+
+  // Force complete loading after waiting too long
+  const handleForceCompleteLoading = () => {
+    console.log('🚨 Force completing world generation manually triggered');
+    setForcedCompletion(true);
+    setInitialGenerationComplete(true);
+    setShowLoadingLogs(true); // Show logs when forcing completion to help debugging
+  };
 
   // Load game data first (if gameId provided)
   useEffect(() => {
@@ -163,21 +165,23 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
 
   // Track initial world generation completion
   useEffect(() => {
-    if (isLoaded && isGenerating) {
-      // If game is loaded but still generating, we're in the initial generation phase
-      console.log('🌍 Initial world generation in progress...');
-    } else if (isLoaded && !initialGenerationComplete) {
-      // When game is loaded and we haven't marked completion yet, do it
-      console.log('✅ Initial world generation complete or ready!');
-      setInitialGenerationComplete(true);
+    // Log state for debugging
+    console.log(`🔍 Tracking generation - isLoaded: ${isLoaded}, isGenerating: ${isGenerating}, initialGenerationComplete: ${initialGenerationComplete}, forcedCompletion: ${forcedCompletion}, tiles: ${generatedTiles.length}`);
+    
+    if (isLoaded && !initialGenerationComplete) {
+      if (!isGenerating || generatedTiles.length > 0 || forcedCompletion) {
+        // When game is loaded and either we're not generating, have tiles, or forced completion
+        console.log('✅ Marking initial world generation as complete');
+        setInitialGenerationComplete(true);
+      }
     }
-  }, [isLoaded, initialGenerationComplete]);
+  }, [isLoaded, isGenerating, initialGenerationComplete, forcedCompletion, generatedTiles]);
 
   // Monitor tile generation to help determine when initial generation is done
   useEffect(() => {
     if (isLoaded && generatedTiles.length > 0 && !initialGenerationComplete) {
       // After we've generated at least one tile, we can consider it ready
-      console.log('✅ Tile generated, marking initial generation as complete');
+      console.log(`✅ ${generatedTiles.length} tiles generated, marking initial generation as complete`);
       setInitialGenerationComplete(true);
     }
   }, [generatedTiles, isLoaded, initialGenerationComplete]);
@@ -403,47 +407,76 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   };
 
   async function handleSaveGame(): Promise<boolean> {
+    console.log('💾 Starting game save process...');
+    
     const game = gameRef.current;
-    if (!game.character || !game.mapManager || !game.saveSystem) return false;
+    if (!game.character || !game.mapManager || !game.saveSystem) {
+      console.error('❌ Cannot save game - required game components are missing');
+      return false;
+    }
 
-    const playerPosition = game.character.getPosition();
-    const playerRotation = game.character.getRotation();
-    const mapTiles = game.mapManager.getLoadedTiles();
-    const healthState = game.character.getHealthSystem().getHealth();
-    const experienceSystem = game.character.getExperienceSystem();
-    const inventorySystem = game.character.getInventorySystem();
-    const equipmentManager = game.character.getEquipmentManager();
+    try {
+      const playerPosition = game.character.getPosition();
+      const playerRotation = game.character.getRotation();
+      
+      // Get ALL map tiles, including those in the AIMapGenerator cache
+      const mapTiles = game.mapManager.getAllTiles();
+      console.log(`🗺️ Saving ${mapTiles.size} map tiles to database`);
+      
+      const healthState = game.character.getHealthSystem().getHealth();
+      const experienceSystem = game.character.getExperienceSystem();
+      const inventorySystem = game.character.getInventorySystem();
+      const equipmentManager = game.character.getEquipmentManager();
 
-    // Get skills data
-    const skillsMap = new Map();
-    experienceSystem.getAllSkills().forEach(skill => {
-      skillsMap.set(skill.id, skill);
-    });
+      // Get skills data
+      const skillsMap = new Map();
+      experienceSystem.getAllSkills().forEach(skill => {
+        skillsMap.set(skill.id, skill);
+      });
 
-    // Get inventory data
-    const inventory = inventorySystem.getInventory();
+      // Get inventory data
+      const inventory = inventorySystem.getInventory();
 
-    // Get equipment data
-    const equippedTool = equipmentManager.getEquippedTool();
-    const equippedWeapon = equipmentManager.getEquippedWeapon();
-    const availableTools = equipmentManager.getAvailableTools();
-    const availableWeapons = equipmentManager.getAvailableWeapons();
+      // Get equipment data
+      const equippedTool = equipmentManager.getEquippedTool();
+      const equippedWeapon = equipmentManager.getEquippedWeapon();
+      const availableTools = equipmentManager.getAvailableTools();
+      const availableWeapons = equipmentManager.getAvailableWeapons();
 
-    return await game.saveSystem.saveGame(
-      playerPosition,
-      playerRotation,
-      currentBiome,
-      mapTiles,
-      npcStates,
-      characterCustomization,
-      healthState,
-      skillsMap,
-      inventory,
-      equippedTool,
-      equippedWeapon,
-      availableTools,
-      availableWeapons
-    );
+      // Include scenario data in save if available
+      let scenarioData = null;
+      if (scenarioInfo) {
+        scenarioData = {
+          id: scenarioInfo.id,
+          name: scenarioInfo.name,
+          prompt: scenarioInfo.prompt,
+          theme: scenarioInfo.theme
+        };
+      }
+
+      const success = await game.saveSystem.saveGame(
+        playerPosition,
+        playerRotation,
+        currentBiome,
+        mapTiles,
+        npcStates,
+        characterCustomization,
+        healthState,
+        skillsMap,
+        inventory,
+        equippedTool,
+        equippedWeapon,
+        availableTools,
+        availableWeapons,
+        scenarioData
+      );
+
+      console.log('💾 Save operation completed with result:', success);
+      return success;
+    } catch (error) {
+      console.error('❌ Error during save operation:', error);
+      return false;
+    }
   }
 
   const handleRetryLoad = () => {
@@ -483,7 +516,9 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     loadingStep,
     isUIActive,
     isPointerLocked,
-    initialGenerationComplete
+    initialGenerationComplete,
+    forcedCompletion,
+    generatedTilesCount: generatedTiles.length
   });
 
   if (isLoadingGame) {
@@ -738,6 +773,23 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
             <div className="text-xs">
               <div className="font-medium mb-1">AI Features Disabled</div>
               <div>Add your OpenAI API key to <code>.env</code> file as <code>VITE_OPENAI_API_KEY</code> to enable AI-powered map generation and NPC conversations. Currently using fallback systems.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Debug Info */}
+      {showLoadingLogs && (
+        <div className="absolute bottom-40 left-4 bg-gray-900 bg-opacity-90 text-gray-100 p-3 rounded-lg backdrop-blur-sm max-w-md">
+          <div className="flex items-start gap-2">
+            <div className="text-xs">
+              <div className="font-medium mb-1">Loading Debug Info:</div>
+              <div>Loaded: {isLoaded ? 'Yes' : 'No'}</div>
+              <div>Initial Generation: {initialGenerationComplete ? 'Complete' : 'In Progress'}</div>
+              <div>Force Completed: {forcedCompletion ? 'Yes' : 'No'}</div>
+              <div>Generating: {isGenerating ? 'Yes' : 'No'}</div>
+              <div>Generated Tiles: {generatedTiles.length}</div>
+              <div>Loading Game: {isLoadingGame ? 'Yes' : 'No'}</div>
             </div>
           </div>
         </div>

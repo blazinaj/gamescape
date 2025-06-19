@@ -21,6 +21,9 @@ export class MapManager {
     onGenerationStart?: (x: number, z: number) => void;
     onNPCInteraction?: (npc: NPC) => void;
   } = {};
+  
+  // Track ALL generated tiles for saving, not just currently loaded ones
+  private allGeneratedTiles = new Map<string, MapTile>();
 
   // Terrain collision objects
   private terrainCollisionObjects = new Map<string, string[]>(); // tile_id -> collision_object_ids
@@ -109,10 +112,13 @@ export class MapManager {
         generated: true
       };
 
+      // Store in our master tracking of ALL generated tiles
+      this.allGeneratedTiles.set(tile.id, tile);
+      
       // Store in AI generator cache
       this.aiGenerator.addToCache(tile);
       
-      // Create and load the tile visually
+      // Create and load the tile visually if it's in range
       const tileGroup = this.createTileObjects(tile);
       this.scene.add(tileGroup);
       this.loadedTiles.set(tile.id, tileGroup);
@@ -133,6 +139,28 @@ export class MapManager {
       }
     });
     return tiles;
+  }
+
+  // Get ALL generated tiles for saving, not just currently loaded ones
+  getAllTiles(): Map<string, MapTile> {
+    // Return combined tiles from currently loaded tiles and saved generator cache
+    const allTiles = new Map<string, MapTile>(this.allGeneratedTiles);
+    
+    // Get any tiles from AIMapGenerator that might not be in our allGeneratedTiles map
+    this.loadedTiles.forEach((group, tileId) => {
+      if (!allTiles.has(tileId)) {
+        const tileInfo = this.aiGenerator.getTileInfo(
+          parseInt(tileId.split('_')[0]),
+          parseInt(tileId.split('_')[1])
+        );
+        if (tileInfo) {
+          allTiles.set(tileId, tileInfo);
+        }
+      }
+    });
+    
+    console.log(`🗺️ getAllTiles returning ${allTiles.size} total tiles`);
+    return allTiles;
   }
 
   private createStartingNPC(): void {
@@ -175,6 +203,9 @@ export class MapManager {
       
       const generatedContent = await this.aiGenerator.generateMapTile(x, z, nearbyBiomes);
       const { tile, description } = generatedContent;
+
+      // Store in our master tracking of ALL generated tiles
+      this.allGeneratedTiles.set(tileId, tile);
 
       const tileGroup = this.createTileObjects(tile);
       this.scene.add(tileGroup);
@@ -1382,8 +1413,7 @@ export class MapManager {
     // Clear generation state
     this.isGenerating.clear();
     
-    // Clear caches
-    this.aiGenerator.clearCache();
+    // Clear caches (but preserve tile data for potential reload)
     this.objectMeshCache.clear();
 
     // Clear interactable objects

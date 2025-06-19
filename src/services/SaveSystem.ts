@@ -323,11 +323,13 @@ export class SaveSystem {
     equippedTool: Tool | null,
     equippedWeapon: Tool | null,
     availableTools: Tool[],
-    availableWeapons: Tool[]
+    availableWeapons: Tool[],
+    scenarioData?: any
   ): Promise<boolean> {
     if (!this.currentGameId) return false;
 
     try {
+      console.log(`💾 Saving game ${this.currentGameId} with ${mapTiles.size} tiles`);
       const currentPlayTime = Math.floor((Date.now() - this.startTime) / 1000);
 
       // Update main game state
@@ -354,7 +356,9 @@ export class SaveSystem {
             regeneration: healthState.regeneration,
             lastDamageTime: healthState.lastDamageTime,
             isRegenerating: healthState.isRegenerating
-          }
+          },
+          // Include scenario data if provided
+          ...(scenarioData ? { scenario_data: scenarioData } : {})
         })
         .eq('id', this.currentGameId);
 
@@ -374,14 +378,32 @@ export class SaveSystem {
         });
       });
 
+      // Use batched upsert for large tile collections
       if (tileData.length > 0) {
-        const { error: tilesError } = await supabase
-          .from('map_tiles')
-          .upsert(tileData, {
-            onConflict: 'game_id,tile_x,tile_z'
-          });
+        // Save in batches of 100 to avoid hitting request size limits
+        const BATCH_SIZE = 100;
+        for (let i = 0; i < tileData.length; i += BATCH_SIZE) {
+          const batch = tileData.slice(i, i + BATCH_SIZE);
+          console.log(`💾 Saving tile batch ${i/BATCH_SIZE + 1}/${Math.ceil(tileData.length/BATCH_SIZE)}: ${batch.length} tiles`);
+          
+          const { error: tilesError } = await supabase
+            .from('map_tiles')
+            .upsert(batch, {
+              onConflict: 'game_id,tile_x,tile_z'
+            });
 
-        if (tilesError) throw tilesError;
+          if (tilesError) {
+            console.error(`Failed to save tile batch ${i/BATCH_SIZE + 1}:`, tilesError);
+            throw tilesError;
+          }
+          
+          // Brief pause between batches to avoid rate limits
+          if (i + BATCH_SIZE < tileData.length) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        }
+        
+        console.log(`✅ Successfully saved all ${tileData.length} map tiles`);
       }
 
       // Save/update NPC states
@@ -581,6 +603,7 @@ export class SaveSystem {
 
   setCurrentGameId(gameId: string): void {
     this.currentGameId = gameId;
+    console.log(`🎮 Game ID set to: ${gameId}`);
   }
 
   formatPlayTime(seconds: number): string {
