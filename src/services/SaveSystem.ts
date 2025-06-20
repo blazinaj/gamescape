@@ -7,7 +7,6 @@ import { Skill } from '../types/ExperienceTypes';
 import { HealthState } from '../types/HealthTypes';
 import * as THREE from 'three';
 import { GameScenario } from '../components/ScenarioSelector';
-import { logger } from './Logger';
 
 export interface GameSave {
   id: string;
@@ -87,12 +86,12 @@ export class SaveSystem {
   async createNewGame(name: string): Promise<string | null> {
     try {
       console.log('🎮 Creating new game:', name);
-      logger.info(`Creating new game: ${name}`);
+      console.info(`Creating new game: ${name}`);
       
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         console.error('❌ User not authenticated');
-        logger.error('User not authenticated when creating new game');
+        console.error('User not authenticated when creating new game');
         return null;
       }
 
@@ -131,19 +130,19 @@ export class SaveSystem {
 
       if (error) {
         console.error('❌ Error creating game:', error);
-        logger.error(`Error creating game: ${error.message}`);
+        console.error(`Error creating game: ${error.message}`);
         throw error;
       }
 
       console.log('✅ New game created with ID:', data.id);
-      logger.info(`New game created with ID: ${data.id}`);
+      console.info(`New game created with ID: ${data.id}`);
       
       this.currentGameId = data.id;
       this.startTime = Date.now();
       return data.id;
     } catch (error) {
       console.error('Failed to create new game:', error);
-      logger.error(`Failed to create new game: ${error.message || error}`);
+      console.error(`Failed to create new game: ${error.message || error}`);
       return null;
     }
   }
@@ -151,12 +150,12 @@ export class SaveSystem {
   async createNewGameWithScenario(name: string, scenario: GameScenario): Promise<string | null> {
     try {
       console.log('🎮 Creating new game with scenario:', scenario.name);
-      logger.info(`Creating new game with scenario: ${scenario.name}`);
+      console.info(`Creating new game with scenario: ${scenario.name}`);
       
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         console.error('❌ User not authenticated');
-        logger.error('User not authenticated when creating game with scenario');
+        console.error('User not authenticated when creating game with scenario');
         return null;
       }
 
@@ -229,12 +228,12 @@ export class SaveSystem {
 
       if (error) {
         console.error('❌ Error creating game with scenario:', error);
-        logger.error(`Error creating game with scenario: ${error.message}`);
+        console.error(`Error creating game with scenario: ${error.message}`);
         throw error;
       }
 
       console.log('✅ New game created with scenario. ID:', data.id);
-      logger.info(`New game created with scenario ${scenario.name}. ID: ${data.id}`);
+      console.info(`New game created with scenario ${scenario.name}. ID: ${data.id}`);
       
       this.currentGameId = data.id;
       this.startTime = Date.now();
@@ -266,7 +265,7 @@ export class SaveSystem {
       return data.id;
     } catch (error) {
       console.error('Failed to create new game with scenario:', error);
-      logger.error(`Failed to create new game with scenario: ${error.message || error}`);
+      console.error(`Failed to create new game with scenario: ${error.message || error}`);
       return null;
     }
   }
@@ -274,12 +273,12 @@ export class SaveSystem {
   async loadGame(gameId: string): Promise<CompleteGameData | null> {
     try {
       console.log('🔄 Loading game data for ID:', gameId);
-      logger.info(`Loading game data for ID: ${gameId}`);
+      console.info(`Loading game data for ID: ${gameId}`);
       
       const isAuth = await this.ensureAuthenticated();
       if (!isAuth) {
         console.error('❌ User not authenticated');
-        logger.error('User not authenticated when loading game');
+        console.error('User not authenticated when loading game');
         return null;
       }
 
@@ -292,7 +291,7 @@ export class SaveSystem {
 
       if (gameError) {
         console.error('❌ Error loading game data:', gameError);
-        logger.error(`Error loading game data: ${gameError.message}`);
+        console.error(`Error loading game data: ${gameError.message}`);
         throw gameError;
       }
 
@@ -304,7 +303,7 @@ export class SaveSystem {
 
       if (tilesError) {
         console.error('❌ Error loading map tiles:', tilesError);
-        logger.error(`Error loading map tiles: ${tilesError.message}`);
+        console.error(`Error loading map tiles: ${tilesError.message}`);
         throw tilesError;
       }
 
@@ -316,7 +315,7 @@ export class SaveSystem {
 
       if (npcError) {
         console.error('❌ Error loading NPC states:', npcError);
-        logger.error(`Error loading NPC states: ${npcError.message}`);
+        console.error(`Error loading NPC states: ${npcError.message}`);
         throw npcError;
       }
 
@@ -328,7 +327,7 @@ export class SaveSystem {
 
       if (skillsError) {
         console.error('❌ Error loading skills:', skillsError);
-        logger.error(`Error loading skills: ${skillsError.message}`);
+        console.error(`Error loading skills: ${skillsError.message}`);
         throw skillsError;
       }
 
@@ -340,7 +339,7 @@ export class SaveSystem {
 
       if (inventoryError) {
         console.error('❌ Error loading inventory:', inventoryError);
-        logger.error(`Error loading inventory: ${inventoryError.message}`);
+        console.error(`Error loading inventory: ${inventoryError.message}`);
         throw inventoryError;
       }
 
@@ -352,12 +351,12 @@ export class SaveSystem {
 
       if (equipmentError) {
         console.error('❌ Error loading equipment:', equipmentError);
-        logger.error(`Error loading equipment: ${equipmentError.message}`);
+        console.error(`Error loading equipment: ${equipmentError.message}`);
         throw equipmentError;
       }
 
       console.log('✅ Successfully loaded complete game data for ID:', gameId);
-      logger.info(`Successfully loaded complete game data for ID: ${gameId}`);
+      console.info(`Successfully loaded complete game data for ID: ${gameId}`);
       
       this.currentGameId = gameId;
       this.startTime = Date.now() - (gameData.play_time * 1000);
@@ -372,7 +371,7 @@ export class SaveSystem {
       };
     } catch (error) {
       console.error('Failed to load game:', error);
-      logger.error(`Failed to load game: ${error.message || error}`);
+      console.error(`Failed to load game: ${error.message || error}`);
       return null;
     }
   }
@@ -395,26 +394,26 @@ export class SaveSystem {
   ): Promise<boolean> {
     if (!this.currentGameId) {
       console.error('❌ No current game ID set');
-      logger.error('No current game ID set when trying to save');
+      console.error('No current game ID set when trying to save');
       return false;
     }
 
     try {
       console.log(`💾 Saving game ${this.currentGameId} with ${mapTiles.size} tiles`);
-      logger.info(`Saving game ${this.currentGameId} with ${mapTiles.size} tiles`);
+      console.info(`Saving game ${this.currentGameId} with ${mapTiles.size} tiles`);
       
       const currentPlayTime = Math.floor((Date.now() - this.startTime) / 1000);
 
       // Validate position data before saving
       if (isNaN(playerPosition.x) || isNaN(playerPosition.y) || isNaN(playerPosition.z)) {
         console.error('❌ Invalid player position:', playerPosition);
-        logger.error(`Invalid player position when saving: ${JSON.stringify(playerPosition)}`);
+        console.error(`Invalid player position when saving: ${JSON.stringify(playerPosition)}`);
         playerPosition = new THREE.Vector3(0, 0, 0);
       }
       
       if (isNaN(playerRotation.x) || isNaN(playerRotation.y) || isNaN(playerRotation.z) || isNaN(playerRotation.w)) {
         console.error('❌ Invalid player rotation:', playerRotation);
-        logger.error(`Invalid player rotation when saving: ${JSON.stringify(playerRotation)}`);
+        console.error(`Invalid player rotation when saving: ${JSON.stringify(playerRotation)}`);
         playerRotation = new THREE.Quaternion();
       }
 
@@ -450,7 +449,7 @@ export class SaveSystem {
 
       if (gameError) {
         console.error('❌ Error updating game data:', gameError);
-        logger.error(`Error updating game data: ${gameError.message}`);
+        console.error(`Error updating game data: ${gameError.message}`);
         throw gameError;
       }
 
@@ -486,7 +485,7 @@ export class SaveSystem {
           tileCount++;
         } catch (error) {
           console.error(`❌ Error processing tile at ${tile.x}, ${tile.z}:`, error);
-          logger.error(`Error processing tile at ${tile.x}, ${tile.z}: ${error.message}`);
+          console.error(`Error processing tile at ${tile.x}, ${tile.z}: ${error.message}`);
         }
       });
 
@@ -507,7 +506,7 @@ export class SaveSystem {
 
             if (tilesError) {
               console.error(`Failed to save tile batch ${i/BATCH_SIZE + 1}:`, tilesError);
-              logger.error(`Failed to save tile batch ${i/BATCH_SIZE + 1}: ${tilesError.message}`);
+              console.error(`Failed to save tile batch ${i/BATCH_SIZE + 1}: ${tilesError.message}`);
               throw tilesError;
             }
             
@@ -517,13 +516,13 @@ export class SaveSystem {
             }
           } catch (batchError) {
             console.error(`Error in batch ${i/BATCH_SIZE + 1}:`, batchError);
-            logger.error(`Error in batch ${i/BATCH_SIZE + 1}: ${batchError.message || batchError}`);
+            console.error(`Error in batch ${i/BATCH_SIZE + 1}: ${batchError.message || batchError}`);
             // Continue with next batch instead of failing completely
           }
         }
         
         console.log(`✅ Successfully saved ${tileCount} map tiles`);
-        logger.info(`Successfully saved ${tileCount} map tiles`);
+        console.info(`Successfully saved ${tileCount} map tiles`);
       }
 
       // Save/update NPC states
@@ -549,12 +548,12 @@ export class SaveSystem {
 
           if (npcError) {
             console.error('❌ Error saving NPC states:', npcError);
-            logger.error(`Error saving NPC states: ${npcError.message}`);
+            console.error(`Error saving NPC states: ${npcError.message}`);
             throw npcError;
           }
         } catch (npcError) {
           console.error('❌ Error during NPC state saving:', npcError);
-          logger.error(`Error during NPC state saving: ${npcError.message || npcError}`);
+          console.error(`Error during NPC state saving: ${npcError.message || npcError}`);
           // Continue - NPCs aren't critical
         }
       }
@@ -583,12 +582,12 @@ export class SaveSystem {
 
           if (skillsError) {
             console.error('❌ Error saving skills:', skillsError);
-            logger.error(`Error saving skills: ${skillsError.message}`);
+            console.error(`Error saving skills: ${skillsError.message}`);
             throw skillsError;
           }
         } catch (skillError) {
           console.error('❌ Error during skill saving:', skillError);
-          logger.error(`Error during skill saving: ${skillError.message || skillError}`);
+          console.error(`Error during skill saving: ${skillError.message || skillError}`);
           // Continue - skills aren't critical
         }
       }
@@ -603,7 +602,7 @@ export class SaveSystem {
 
         if (clearInventoryError) {
           console.error('❌ Error clearing inventory:', clearInventoryError);
-          logger.error(`Error clearing inventory: ${clearInventoryError.message}`);
+          console.error(`Error clearing inventory: ${clearInventoryError.message}`);
           throw clearInventoryError;
         }
 
@@ -623,13 +622,13 @@ export class SaveSystem {
 
           if (inventoryError) {
             console.error('❌ Error saving inventory:', inventoryError);
-            logger.error(`Error saving inventory: ${inventoryError.message}`);
+            console.error(`Error saving inventory: ${inventoryError.message}`);
             throw inventoryError;
           }
         }
       } catch (inventoryError) {
         console.error('❌ Error during inventory saving:', inventoryError);
-        logger.error(`Error during inventory saving: ${inventoryError.message || inventoryError}`);
+        console.error(`Error during inventory saving: ${inventoryError.message || inventoryError}`);
         // Continue - inventory isn't critical
       }
 
@@ -643,7 +642,7 @@ export class SaveSystem {
 
         if (clearEquipmentError) {
           console.error('❌ Error clearing equipment:', clearEquipmentError);
-          logger.error(`Error clearing equipment: ${clearEquipmentError.message}`);
+          console.error(`Error clearing equipment: ${clearEquipmentError.message}`);
           throw clearEquipmentError;
         }
 
@@ -682,22 +681,22 @@ export class SaveSystem {
 
           if (equipmentError) {
             console.error('❌ Error saving equipment:', equipmentError);
-            logger.error(`Error saving equipment: ${equipmentError.message}`);
+            console.error(`Error saving equipment: ${equipmentError.message}`);
             throw equipmentError;
           }
         }
       } catch (equipmentError) {
         console.error('❌ Error during equipment saving:', equipmentError);
-        logger.error(`Error during equipment saving: ${equipmentError.message || equipmentError}`);
+        console.error(`Error during equipment saving: ${equipmentError.message || equipmentError}`);
         // Continue - equipment isn't critical
       }
 
       console.log('💾 Game saved successfully with complete player data');
-      logger.info(`Game ${this.currentGameId} saved successfully with ${mapTiles.size} tiles`);
+      console.info(`Game ${this.currentGameId} saved successfully with ${mapTiles.size} tiles`);
       return true;
     } catch (error) {
       console.error('Failed to save game:', error);
-      logger.error(`Failed to save game: ${error.message || error}`);
+      console.error(`Failed to save game: ${error.message || error}`);
       return false;
     }
   }
@@ -793,7 +792,7 @@ export class SaveSystem {
   setCurrentGameId(gameId: string): void {
     this.currentGameId = gameId;
     console.log(`🎮 Game ID set to: ${gameId}`);
-    logger.info(`Current game ID set to: ${gameId}`);
+    console.info(`Current game ID set to: ${gameId}`);
   }
 
   formatPlayTime(seconds: number): string {
