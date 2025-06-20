@@ -45,42 +45,56 @@ export class GameInitializer {
       // Initialize game components
       console.log('🔧 Creating GameRenderer...');
       gameRef.renderer = new GameRenderer();
+      if (!gameRef.renderer) {
+        throw new Error('Failed to create GameRenderer - constructor returned null');
+      }
       gameRef.scene = gameRef.renderer.scene;
       
       console.log('🔧 Creating Character...');
       gameRef.character = new Character(characterCustomization);
-      
-      // Critical null check for character
       if (!gameRef.character) {
-        throw new Error('Failed to create character - Character constructor returned null');
+        throw new Error('Failed to create Character - constructor returned null');
       }
       
       console.log('🔧 Creating InputManager...');
       gameRef.inputManager = new InputManager();
+      if (!gameRef.inputManager) {
+        throw new Error('Failed to create InputManager - constructor returned null');
+      }
       
       console.log('🔧 Creating CameraController...');
       gameRef.cameraController = new CameraController(gameRef.renderer.camera);
+      if (!gameRef.cameraController) {
+        throw new Error('Failed to create CameraController - constructor returned null');
+      }
       
       console.log('🔧 Creating MapManager...');
       gameRef.mapManager = new MapManager(gameRef.renderer.scene);
+      if (!gameRef.mapManager) {
+        throw new Error('Failed to create MapManager - constructor returned null');
+      }
       
       console.log('🔧 Creating ConversationSystem...');
       gameRef.conversationSystem = new ConversationSystem();
+      if (!gameRef.conversationSystem) {
+        throw new Error('Failed to create ConversationSystem - constructor returned null');
+      }
       
       console.log('🔧 Creating SaveSystem...');
       gameRef.saveSystem = new SaveSystem();
+      if (!gameRef.saveSystem) {
+        throw new Error('Failed to create SaveSystem - constructor returned null');
+      }
 
       console.log('🔧 Creating EnemyManager...');
       gameRef.enemyManager = new EnemyManager(gameRef.renderer.scene, gameRef.character.getInventorySystem());
+      if (!gameRef.enemyManager) {
+        throw new Error('Failed to create EnemyManager - constructor returned null');
+      }
 
       // Store the object systems in the game ref for UI access
       gameRef.customObjectGenerator = this.customObjectGenerator;
       gameRef.objectDefinitionSystem = this.objectDefinitionSystem;
-
-      // Critical null check for enemy manager
-      if (!gameRef.enemyManager) {
-        throw new Error('Failed to create enemy manager - EnemyManager constructor returned null');
-      }
 
       console.log('✅ All game components created successfully');
 
@@ -148,7 +162,7 @@ export class GameInitializer {
           console.log('⚠️ No scenario data found, using default generation');
         }
         
-        // Restore player position and rotation - with enhanced null checks
+        // Restore player position and rotation
         if (gameRef.character && gameRef.character.mesh) {
           const pos = gameData.game.player_position;
           const rot = gameData.game.player_rotation;
@@ -170,9 +184,6 @@ export class GameInitializer {
             console.warn('⚠️ Invalid rotation data, using default rotation');
             gameRef.character.mesh.quaternion.set(0, 0, 0, 1);
           }
-        } else {
-          console.error('❌ Cannot restore player position - character or character.mesh is null');
-          // Don't throw here, just use default position
         }
 
         // Restore health state
@@ -256,12 +267,8 @@ export class GameInitializer {
           });
         }
 
-        // Set the current game ID for saving - with null check
-        if (gameRef.saveSystem) {
-          gameRef.saveSystem.setCurrentGameId(gameData.game.id);
-        } else {
-          console.error('❌ Cannot set current game ID - saveSystem is null');
-        }
+        // Set the current game ID for saving
+        gameRef.saveSystem.setCurrentGameId(gameData.game.id);
 
         // Load saved tiles
         if (gameData.mapTiles.length > 0) {
@@ -349,42 +356,56 @@ export class GameInitializer {
       // Initialize game components
       console.log('🔧 Creating GameRenderer...');
       gameRef.renderer = new GameRenderer();
+      if (!gameRef.renderer) {
+        throw new Error('Failed to create GameRenderer - constructor returned null');
+      }
       gameRef.scene = gameRef.renderer.scene;
       
       console.log('🔧 Creating Character...');
       gameRef.character = new Character(characterCustomization);
-      
-      // Critical null check for character
       if (!gameRef.character) {
-        throw new Error('Failed to create character - Character constructor returned null');
+        throw new Error('Failed to create Character - constructor returned null');
       }
       
       console.log('🔧 Creating InputManager...');
       gameRef.inputManager = new InputManager();
+      if (!gameRef.inputManager) {
+        throw new Error('Failed to create InputManager - constructor returned null');
+      }
       
       console.log('🔧 Creating CameraController...');
       gameRef.cameraController = new CameraController(gameRef.renderer.camera);
+      if (!gameRef.cameraController) {
+        throw new Error('Failed to create CameraController - constructor returned null');
+      }
       
       console.log('🔧 Creating MapManager...');
       gameRef.mapManager = new MapManager(gameRef.renderer.scene);
+      if (!gameRef.mapManager) {
+        throw new Error('Failed to create MapManager - constructor returned null');
+      }
       
       console.log('🔧 Creating ConversationSystem...');
       gameRef.conversationSystem = new ConversationSystem();
+      if (!gameRef.conversationSystem) {
+        throw new Error('Failed to create ConversationSystem - constructor returned null');
+      }
       
       console.log('🔧 Creating SaveSystem...');
       gameRef.saveSystem = new SaveSystem();
+      if (!gameRef.saveSystem) {
+        throw new Error('Failed to create SaveSystem - constructor returned null');
+      }
 
       console.log('🔧 Creating EnemyManager...');
       gameRef.enemyManager = new EnemyManager(gameRef.renderer.scene, gameRef.character.getInventorySystem());
+      if (!gameRef.enemyManager) {
+        throw new Error('Failed to create EnemyManager - constructor returned null');
+      }
 
       // Store the object systems in the game ref for UI access
       gameRef.customObjectGenerator = this.customObjectGenerator;
       gameRef.objectDefinitionSystem = this.objectDefinitionSystem;
-
-      // Critical null check for enemy manager
-      if (!gameRef.enemyManager) {
-        throw new Error('Failed to create enemy manager - EnemyManager constructor returned null');
-      }
 
       console.log('✅ All game components created successfully');
 
@@ -437,7 +458,7 @@ export class GameInitializer {
       if (gameData) {
         console.log('🔄 Applying loaded game data...');
         
-        // Restore player position and rotation - with enhanced null checks
+        // Restore player position and rotation
         if (gameRef.character && gameRef.character.mesh) {
           const pos = gameData.game.player_position;
           const rot = gameData.game.player_rotation;
@@ -459,9 +480,6 @@ export class GameInitializer {
             console.warn('⚠️ Invalid rotation data, using default rotation');
             gameRef.character.mesh.quaternion.set(0, 0, 0, 1);
           }
-        } else {
-          console.error('❌ Cannot restore player position - character or character.mesh is null');
-          // Don't throw here, just use default position
         }
 
         // Restore health state
@@ -545,12 +563,8 @@ export class GameInitializer {
           });
         }
 
-        // Set the current game ID for saving - with null check
-        if (gameRef.saveSystem) {
-          gameRef.saveSystem.setCurrentGameId(gameData.game.id);
-        } else {
-          console.error('❌ Cannot set current game ID - saveSystem is null');
-        }
+        // Set the current game ID for saving
+        gameRef.saveSystem.setCurrentGameId(gameData.game.id);
 
         // Load saved tiles
         if (gameData.mapTiles.length > 0) {
