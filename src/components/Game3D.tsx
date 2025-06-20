@@ -51,6 +51,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   const [showLoadingLogs, setShowLoadingLogs] = useState(false);
   const [debugLoadingInfo, setDebugLoadingInfo] = useState<string[]>([]);
   const [loadingStartTime] = useState(Date.now());
+  const [loadingTimeoutCount, setLoadingTimeoutCount] = useState(0);
 
   const {
     gameRef,
@@ -118,6 +119,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     setForcedCompletion(true);
     setInitialGenerationComplete(true);
     setShowLoadingLogs(true); // Show logs when forcing completion to help debugging
+    setLoadingTimeoutCount(prev => prev + 1);
     
     // Add debug info
     addDebugInfo('Force completion triggered manually');
@@ -213,12 +215,13 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       
       // Check for timeout
       const timeElapsed = (Date.now() - loadingStartTime) / 1000;
-      if (timeElapsed > 25) {
-        // Force complete after 25 seconds as a safety measure
+      if (timeElapsed > 15) {
+        // Force complete after 15 seconds as a safety measure
         console.log(`⏱️ Forcing completion after ${timeElapsed}s timeout`);
         addDebugInfo(`Timeout-based force completion after ${timeElapsed}s`);
         setInitialGenerationComplete(true);
         setForcedCompletion(true);
+        setLoadingTimeoutCount(prev => prev + 1);
       }
     }
   }, [isLoaded, isGenerating, initialGenerationComplete, forcedCompletion, generatedTiles]);
@@ -549,7 +552,8 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     isPointerLocked,
     initialGenerationComplete,
     forcedCompletion,
-    generatedTilesCount: generatedTiles.length
+    generatedTilesCount: generatedTiles.length,
+    loadingTimeoutCount
   });
 
   if (isLoadingGame) {
@@ -821,6 +825,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
               <div>Generating: {isGenerating ? 'Yes' : 'No'}</div>
               <div>Generated Tiles: {generatedTiles.length}</div>
               <div>Loading Game: {isLoadingGame ? 'Yes' : 'No'}</div>
+              <div>Timeout Count: {loadingTimeoutCount}</div>
               
               {debugLoadingInfo.length > 0 && (
                 <>

@@ -4,7 +4,8 @@ import { MapTile, MapObject, NPCData } from '../types/MapTypes';
 import { SavedMapTile } from '../services/SaveSystem';
 import { NPC } from './NPC';
 import { Character } from './Character';
-import { collisionSystem } from '../services/CollisionSystem';
+import { collisionSystem } from './CollisionSystem';
+import { logger } from './Logger';
 
 export class MapManager {
   private scene: THREE.Scene;
@@ -16,15 +17,14 @@ export class MapManager {
   private loadDistance = 2; // Load tiles within 2 tiles of player
   private hasCreatedStartingNPC = false;
   private character: Character | null = null;
-  
-  // Track ALL generated tiles for saving, not just currently loaded ones
-  private allGeneratedTiles = new Map<string, MapTile>();
-
   private callbacks: {
     onTileGenerated?: (tile: MapTile, description: string) => void;
     onGenerationStart?: (x: number, z: number) => void;
     onNPCInteraction?: (npc: NPC) => void;
   } = {};
+  
+  // Track ALL generated tiles for saving, not just currently loaded ones
+  private allGeneratedTiles = new Map<string, MapTile>();
 
   // Terrain collision objects
   private terrainCollisionObjects = new Map<string, string[]>(); // tile_id -> collision_object_ids
@@ -34,24 +34,70 @@ export class MapManager {
   private customVegetation: any[] = [];
   private customStructures: any[] = [];
   
-  // Track failed generation attempts to avoid infinite retries
-  private failedGenerationAttempts = new Map<string, number>();
-  private maxGenerationAttempts = 3;
+  // Track generation failures for more robust error handling
+  private generationFailures = 0;
+  private lastGenerationAttempt = 0;
+  private maxFailuresBeforeFallback = 3;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.aiGenerator = new AIMapGenerator();
-    console.log('🗺️ Map Manager initialized');
+    
+    // Create a minimum default tile at origin to ensure there's always something
+    this.createDefaultTile(0, 0);
+  }
+  
+  // Create a basic default tile to guarantee minimum content
+  private createDefaultTile(x: number, z: number): void {
+    console.log(`📝 Creating default tile at (${x}, ${z})`);
+    
+    const tileId = `${x}_${z}`;
+    
+    if (this.allGeneratedTiles.has(tileId)) {
+      return; // Already exists
+    }
+    
+    // Create a simple default tile
+    const tile: MapTile = {
+      id: tileId,
+      x,
+      z,
+      biome: 'grassland',
+      objects: [
+        {
+          type: 'tree',
+          position: { x: x * this.tileSize + 5, y: 0, z: z * this.tileSize + 5 },
+          scale: { x: 1, y: 1, z: 1 },
+          rotation: { x: 0, y: 0, z: 0 }
+        },
+        {
+          type: 'rock',
+          position: { x: x * this.tileSize - 5, y: 0, z: z * this.tileSize - 5 },
+          scale: { x: 1, y: 1, z: 1 },
+          rotation: { x: 0, y: 0, z: 0 }
+        }
+      ],
+      generated: true
+    };
+    
+    // Store in tracking maps
+    this.allGeneratedTiles.set(tileId, tile);
+    this.aiGenerator.addToCache(tile);
+    
+    // Create and load the tile if it's not already loaded
+    if (!this.loadedTiles.has(tileId)) {
+      const tileGroup = this.createTileObjects(tile);
+      this.scene.add(tileGroup);
+      this.loadedTiles.set(tileId, tileGroup);
+    }
   }
 
   setCharacter(character: Character): void {
     this.character = character;
-    console.log('👤 Character reference set in MapManager');
   }
 
   setCallbacks(callbacks: typeof this.callbacks): void {
     this.callbacks = callbacks;
-    console.log('🔄 Callbacks set in MapManager');
   }
 
   // Set scenario for map generation
@@ -73,112 +119,147 @@ export class MapManager {
   }
 
   async updateAroundPosition(playerPosition: THREE.Vector3): Promise<void> {
-    try {
-      const playerTileX = Math.floor(playerPosition.x / this.tileSize);
-      const playerTileZ = Math.floor(playerPosition.z / this.tileSize);
+    const playerTileX = Math.floor(playerPosition.x / this.tileSize);
+    const playerTileZ = Math.floor(playerPosition.z / this.tileSize);
 
-      // Create starting NPC if we haven't already and player is near spawn
-      if (!this.hasCreatedStartingNPC && Math.abs(playerTileX) <= 1 && Math.abs(playerTileZ) <= 1) {
-        this.createStartingNPC();
-        this.hasCreatedStartingNPC = true;
-      }
+    // Create starting NPC if we haven't already and player is near spawn
+    if (!this.hasCreatedStartingNPC && Math.abs(playerTileX) <= 1 && Math.abs(playerTileZ) <= 1) {
+      this.createStartingNPC();
+      this.hasCreatedStartingNPC = true;
+    }
 
-      // Track active generation requests to avoid overwhelming the system
-      const activeGenerations = Array.from(this.isGenerating.values()).length;
-      
-      // Limit concurrent generation attempts
-      const maxConcurrentGenerations = 2;
-      if (activeGenerations >= maxConcurrentGenerations) {
-        console.log(`⏱️ Delaying some tile generation - already have ${activeGenerations} in progress`);
-      }
+    // Always make sure origin tile is created
+    this.createDefaultTile(0, 0);
+    
+    // Also create a tile where the player is currently standing
+    this.createDefaultTile(playerTileX, playerTileZ);
 
-      // Generate tiles around player
-      const promises: Promise<void>[] = [];
-      
-      // Generate tiles in order of proximity to player
-      const tilesToGenerate = [];
-      
+    // Set a limit to how many tiles we'll try to generate at once
+    const maxConcurrentGenerations = 3;
+    const pendingGenerations = Array.from(this.isGenerating).length;
+    
+    // Check if we've had too many failures recently
+    const now = Date.now();
+    const timeSinceLastAttempt = now - this.lastGenerationAttempt;
+    
+    // Reset failure count if it's been a while since last attempt
+    if (timeSinceLastAttempt > 10000) { // 10 seconds
+      this.generationFailures = 0;
+    }
+    
+    // Don't try to generate too many at once or if we've had too many recent failures
+    const canGenerateMore = pendingGenerations < maxConcurrentGenerations && 
+                           this.generationFailures < this.maxFailuresBeforeFallback;
+
+    const promises: Promise<void>[] = [];
+
+    // Generate tiles around player
+    if (canGenerateMore) {
       for (let x = playerTileX - this.loadDistance; x <= playerTileX + this.loadDistance; x++) {
         for (let z = playerTileZ - this.loadDistance; z <= playerTileZ + this.loadDistance; z++) {
           const tileId = `${x}_${z}`;
-          const distanceToPlayer = Math.max(Math.abs(x - playerTileX), Math.abs(z - playerTileZ));
           
-          if (!this.loadedTiles.has(tileId) && !this.isGenerating.has(tileId)) {
-            // Check if this tile has exceeded generation attempts
-            const attempts = this.failedGenerationAttempts.get(tileId) || 0;
-            if (attempts < this.maxGenerationAttempts) {
-              tilesToGenerate.push({ x, z, distance: distanceToPlayer });
-            }
+          // If not already loaded, not being generated, and we're not at max concurrent
+          if (!this.loadedTiles.has(tileId) && !this.isGenerating.has(tileId) && promises.length < maxConcurrentGenerations) {
+            promises.push(this.generateAndLoadTile(x, z));
           }
         }
       }
-      
-      // Sort by distance - generate closest tiles first
-      tilesToGenerate.sort((a, b) => a.distance - b.distance);
-      
-      // Limit to prevent too many concurrent generations
-      const tilesToActuallyGenerate = tilesToGenerate.slice(0, maxConcurrentGenerations - activeGenerations);
-      
-      // Generate the tiles in order of priority
-      for (const tile of tilesToActuallyGenerate) {
-        promises.push(this.generateAndLoadTile(tile.x, tile.z));
-      }
+    }
 
-      // Update NPCs
-      this.updateNPCs();
+    // Update NPCs
+    this.updateNPCs();
 
-      // Check for NPC interactions
-      this.checkNPCInteractions(playerPosition);
+    // Check for NPC interactions
+    this.checkNPCInteractions(playerPosition);
 
-      // Unload distant tiles
-      this.unloadDistantTiles(playerTileX, playerTileZ);
+    // Unload distant tiles
+    this.unloadDistantTiles(playerTileX, playerTileZ);
 
+    try {
       await Promise.all(promises);
     } catch (error) {
-      console.error('Error updating map around player position:', error);
-      // Don't rethrow - we want to continue even if there's an error
+      console.error('Error generating tiles:', error);
+      logger.error(`Tile generation error: ${error.message}`);
+      this.generationFailures++;
     }
   }
 
   loadSavedTiles(savedTiles: SavedMapTile[]): void {
-    try {
-      console.log('🗺️ Loading', savedTiles.length, 'saved tiles...');
-      
-      let loadedCount = 0;
-      let errorCount = 0;
-      
-      savedTiles.forEach(savedTile => {
-        try {
-          const tile: MapTile = {
-            id: `${savedTile.tile_x}_${savedTile.tile_z}`,
-            x: savedTile.tile_x,
-            z: savedTile.tile_z,
-            biome: savedTile.biome as any,
-            objects: savedTile.objects,
-            generated: true
-          };
-
-          // Store in our master tracking of ALL generated tiles
-          this.allGeneratedTiles.set(tile.id, tile);
-          
-          // Store in AI generator cache
-          this.aiGenerator.addToCache(tile);
-          
-          // Create and load the tile visually
-          const tileGroup = this.createTileObjects(tile);
-          this.scene.add(tileGroup);
-          this.loadedTiles.set(tile.id, tileGroup);
-          
-          loadedCount++;
-        } catch (error) {
-          console.error(`❌ Error loading tile ${savedTile.tile_x},${savedTile.tile_z}:`, error);
-          errorCount++;
+    console.log('🗺️ Loading', savedTiles.length, 'saved tiles...');
+    
+    // Create a map of the saved tiles for quick lookup
+    const savedTileMap = new Map<string, SavedMapTile>();
+    savedTiles.forEach(savedTile => {
+      const tileId = `${savedTile.tile_x}_${savedTile.tile_z}`;
+      savedTileMap.set(tileId, savedTile);
+    });
+    
+    // Prioritize loading the origin tile first
+    const originTileData = savedTileMap.get('0_0');
+    if (originTileData) {
+      this.processSavedTile(originTileData);
+      savedTileMap.delete('0_0');
+    }
+    
+    // Then load tiles close to origin in expanding circles
+    const loadRadius = 3; // Adjust based on initial view distance
+    for (let radius = 1; radius <= loadRadius; radius++) {
+      for (let x = -radius; x <= radius; x++) {
+        for (let z = -radius; z <= radius; z++) {
+          // Only process tiles at the current radius (edge of square)
+          if (Math.abs(x) === radius || Math.abs(z) === radius) {
+            const tileId = `${x}_${z}`;
+            const tileData = savedTileMap.get(tileId);
+            if (tileData) {
+              this.processSavedTile(tileData);
+              savedTileMap.delete(tileId);
+            }
+          }
         }
-      });
+      }
+    }
+    
+    // Process remaining tiles
+    savedTileMap.forEach(tileData => {
+      this.processSavedTile(tileData);
+    });
+    
+    console.log(`✅ Finished loading all ${savedTiles.length} tiles`);
+  }
+  
+  private processSavedTile(savedTile: SavedMapTile): void {
+    const tileId = `${savedTile.tile_x}_${savedTile.tile_z}`;
+    
+    try {
+      // Convert saved tile to MapTile format
+      const tile: MapTile = {
+        id: tileId,
+        x: savedTile.tile_x,
+        z: savedTile.tile_z,
+        biome: savedTile.biome as any,
+        objects: savedTile.objects || [],
+        generated: true
+      };
+
+      // Store in our master tracking of ALL generated tiles
+      this.allGeneratedTiles.set(tile.id, tile);
       
-      console.log(`✅ Successfully loaded ${loadedCount} tiles with ${errorCount} errors`);
+      // Store in AI generator cache
+      this.aiGenerator.addToCache(tile);
+      
+      // Create and load the tile visually if it's in range
+      const tileGroup = this.createTileObjects(tile);
+      this.scene.add(tileGroup);
+      this.loadedTiles.set(tile.id, tileGroup);
+      
+      console.log(`✅ Loaded tile ${tile.id} with ${tile.objects.length} objects`);
     } catch (error) {
-      console.error('❌ Error in loadSavedTiles:', error);
+      console.error(`❌ Error loading tile ${tileId}:`, error);
+      // Create a default tile as fallback
+      const x = savedTile.tile_x;
+      const z = savedTile.tile_z;
+      this.createDefaultTile(x, z);
     }
   }
 
@@ -198,68 +279,67 @@ export class MapManager {
 
   // Get ALL generated tiles for saving, not just currently loaded ones
   getAllTiles(): Map<string, MapTile> {
-    try {
-      // Return combined tiles from currently loaded tiles and saved generator cache
-      const allTiles = new Map<string, MapTile>(this.allGeneratedTiles);
-      
-      // Get any tiles from AIMapGenerator that might not be in our allGeneratedTiles map
-      this.loadedTiles.forEach((group, tileId) => {
-        if (!allTiles.has(tileId)) {
-          const tileInfo = this.aiGenerator.getTileInfo(
-            parseInt(tileId.split('_')[0]),
-            parseInt(tileId.split('_')[1])
-          );
-          if (tileInfo) {
-            allTiles.set(tileId, tileInfo);
-          }
+    // Return combined tiles from currently loaded tiles and saved generator cache
+    const allTiles = new Map<string, MapTile>(this.allGeneratedTiles);
+    
+    // Get any tiles from AIMapGenerator that might not be in our allGeneratedTiles map
+    this.loadedTiles.forEach((group, tileId) => {
+      if (!allTiles.has(tileId)) {
+        const tileInfo = this.aiGenerator.getTileInfo(
+          parseInt(tileId.split('_')[0]),
+          parseInt(tileId.split('_')[1])
+        );
+        if (tileInfo) {
+          allTiles.set(tileId, tileInfo);
         }
-      });
-      
-      console.log(`🗺️ getAllTiles returning ${allTiles.size} total tiles`);
-      return allTiles;
-    } catch (error) {
-      console.error('❌ Error in getAllTiles:', error);
-      // Return whatever we have to avoid crashing
-      return this.allGeneratedTiles;
+      }
+    });
+    
+    // Make sure there's always at least an origin tile
+    if (!allTiles.has('0_0')) {
+      this.createDefaultTile(0, 0);
+      const originTile = this.aiGenerator.getTileInfo(0, 0);
+      if (originTile) {
+        allTiles.set('0_0', originTile);
+      }
     }
+    
+    console.log(`🗺️ getAllTiles returning ${allTiles.size} total tiles`);
+    return allTiles;
   }
 
   private createStartingNPC(): void {
-    try {
-      const startingNPCData: NPCData = {
-        id: 'starting_guide_npc',
-        name: 'Sage',
-        personality: 'wise and welcoming',
-        background: 'An ancient guide who has watched over travelers for countless years. Sage knows the secrets of this ever-changing world and is always ready to help newcomers.',
-        occupation: 'World Guide',
-        mood: 'welcoming',
-        topics: ['world exploration', 'AI generation', 'travel tips', 'local lore', 'getting started'],
-        appearance: {
-          bodyColor: '#F1C27D',
-          clothingColor: '#8A2BE2',
-          scale: 1.1
-        }
-      };
+    const startingNPCData: NPCData = {
+      id: 'starting_guide_npc',
+      name: 'Sage',
+      personality: 'wise and welcoming',
+      background: 'An ancient guide who has watched over travelers for countless years. Sage knows the secrets of this ever-changing world and is always ready to help newcomers.',
+      occupation: 'World Guide',
+      mood: 'welcoming',
+      topics: ['world exploration', 'AI generation', 'travel tips', 'local lore', 'getting started'],
+      appearance: {
+        bodyColor: '#F1C27D',
+        clothingColor: '#8A2BE2',
+        scale: 1.1
+      }
+    };
 
-      // Position the NPC near spawn but not directly on it
-      const position = new THREE.Vector3(3, 0, 3);
-      const startingNPC = new NPC(startingNPCData, position);
-      
-      this.scene.add(startingNPC.mesh);
-      this.loadedNPCs.set(startingNPCData.id, startingNPC);
+    // Position the NPC near spawn but not directly on it
+    const position = new THREE.Vector3(3, 0, 3);
+    const startingNPC = new NPC(startingNPCData, position);
+    
+    this.scene.add(startingNPC.mesh);
+    this.loadedNPCs.set(startingNPCData.id, startingNPC);
 
-      console.log('🧙 Starting NPC "Sage" created at spawn location');
-    } catch (error) {
-      console.error('❌ Error creating starting NPC:', error);
-    }
+    console.log('🧙 Starting NPC "Sage" created at spawn location');
   }
 
   private async generateAndLoadTile(x: number, z: number): Promise<void> {
     const tileId = `${x}_${z}`;
     this.isGenerating.add(tileId);
+    this.lastGenerationAttempt = Date.now();
 
     try {
-      // Call the generation start callback
       if (this.callbacks.onGenerationStart) {
         this.callbacks.onGenerationStart(x, z);
       }
@@ -277,87 +357,32 @@ export class MapManager {
       this.scene.add(tileGroup);
       this.loadedTiles.set(tileId, tileGroup);
 
-      // Reset the failed generation counter for this tile
-      this.failedGenerationAttempts.delete(tileId);
-
-      // Call the tile generated callback
       if (this.callbacks.onTileGenerated) {
         this.callbacks.onTileGenerated(tile, description);
       }
-      
       console.log(`🎯 Generated tile ${tileId} with ${tile.objects.length} objects`);
+      
+      // Reset failure count if successful
+      this.generationFailures = 0;
     } catch (error) {
       console.error(`❌ Failed to generate tile ${tileId}:`, error);
+      logger.error(`Failed to generate tile ${tileId}: ${error.message}`);
       
-      // Track failed attempt
-      const attempts = (this.failedGenerationAttempts.get(tileId) || 0) + 1;
-      this.failedGenerationAttempts.set(tileId, attempts);
+      // Increment failure count
+      this.generationFailures++;
       
-      // If we've reached max attempts, create a basic fallback tile
-      if (attempts >= this.maxGenerationAttempts) {
-        console.warn(`⚠️ Max generation attempts reached for tile ${tileId}, creating basic fallback`);
-        this.createBasicFallbackTile(x, z);
+      // Create default tile as fallback
+      this.createDefaultTile(x, z);
+      
+      // Create a simple feedback to avoid blocking UI
+      if (this.callbacks.onTileGenerated) {
+        const fallbackTile = this.aiGenerator.getTileInfo(x, z);
+        if (fallbackTile) {
+          this.callbacks.onTileGenerated(fallbackTile, "Fallback tile generated due to error");
+        }
       }
     } finally {
       this.isGenerating.delete(tileId);
-    }
-  }
-
-  // Create a very simple fallback tile when generation fails repeatedly
-  private createBasicFallbackTile(x: number, z: number): void {
-    try {
-      const tileId = `${x}_${z}`;
-      
-      const tile: MapTile = {
-        id: tileId,
-        x,
-        z,
-        biome: 'grassland',
-        objects: [],
-        generated: true
-      };
-      
-      // Add a few basic objects
-      for (let i = 0; i < 3; i++) {
-        tile.objects.push({
-          type: 'tree',
-          position: {
-            x: x * this.tileSize + (Math.random() - 0.5) * 20,
-            y: 0,
-            z: z * this.tileSize + (Math.random() - 0.5) * 20
-          },
-          scale: {
-            x: 0.8 + Math.random() * 0.4,
-            y: 0.8 + Math.random() * 0.4,
-            z: 0.8 + Math.random() * 0.4
-          },
-          rotation: {
-            x: 0,
-            y: Math.random() * Math.PI * 2,
-            z: 0
-          }
-        });
-      }
-      
-      // Store in our master tracking of ALL generated tiles
-      this.allGeneratedTiles.set(tileId, tile);
-      
-      // Store in AI generator cache
-      this.aiGenerator.addToCache(tile);
-      
-      // Create and load the tile visually
-      const tileGroup = this.createTileObjects(tile);
-      this.scene.add(tileGroup);
-      this.loadedTiles.set(tileId, tileGroup);
-      
-      // Call the tile generated callback
-      if (this.callbacks.onTileGenerated) {
-        this.callbacks.onTileGenerated(tile, "Basic fallback tile");
-      }
-      
-      console.log(`⚠️ Created fallback tile ${tileId}`);
-    } catch (error) {
-      console.error('❌ Error creating fallback tile:', error);
     }
   }
 
@@ -376,61 +401,63 @@ export class MapManager {
   }
 
   private createTileObjects(tile: MapTile): THREE.Group {
-    try {
-      const tileGroup = new THREE.Group();
-      tileGroup.name = `tile_${tile.x}_${tile.z}`;
+    const tileGroup = new THREE.Group();
+    tileGroup.name = `tile_${tile.x}_${tile.z}`;
 
-      // Track collision objects for this tile
-      const tileCollisionIds: string[] = [];
+    // Track collision objects for this tile
+    const tileCollisionIds: string[] = [];
 
-      // Add ground plane for this tile with collision
-      this.addTileGround(tileGroup, tile, tileCollisionIds);
+    // Add ground plane for this tile with collision
+    this.addTileGround(tileGroup, tile, tileCollisionIds);
 
-      // Add objects
-      tile.objects.forEach((obj, index) => {
-        try {
-          if (obj.type === 'npc') {
-            this.createNPC(obj, tile);
-          } else {
-            const mesh = this.createObjectMesh(obj, tile.biome, index);
-            if (mesh) {
-              tileGroup.add(mesh);
-              
-              // Register interactable objects with the character for interaction
-              if (this.character && this.isInteractableObject(obj.type)) {
-                const objectId = `${tile.id}_${index}_${obj.type}`;
-                this.character.registerInteractableObject(
-                  objectId,
-                  obj.type,
-                  obj.position,
-                  mesh
-                );
-              }
+    // Add objects with better error handling
+    for (let index = 0; index < tile.objects.length; index++) {
+      try {
+        const obj = tile.objects[index];
+        
+        if (!obj || !obj.type) {
+          console.warn(`⚠️ Invalid object at index ${index} in tile ${tile.id}, skipping`);
+          continue;
+        }
+        
+        if (obj.type === 'npc') {
+          this.createNPC(obj, tile);
+        } else {
+          const mesh = this.createObjectMesh(obj, tile.biome, index);
+          if (mesh) {
+            tileGroup.add(mesh);
+            
+            // Register interactable objects with the character for interaction
+            if (this.character && this.isInteractableObject(obj.type)) {
+              const objectId = `${tile.id}_${index}_${obj.type}`;
+              this.character.registerInteractableObject(
+                objectId,
+                obj.type,
+                obj.position,
+                mesh
+              );
+            }
 
-              // Add collision object for static objects
-              if (this.isStaticCollidableObject(obj.type)) {
-                const collisionId = this.addObjectCollision(obj, mesh, `${tile.id}_${index}`);
-                if (collisionId) {
-                  tileCollisionIds.push(collisionId);
-                }
+            // Add collision object for static objects
+            if (this.isStaticCollidableObject(obj.type)) {
+              const collisionId = this.addObjectCollision(obj, mesh, `${tile.id}_${index}`);
+              if (collisionId) {
+                tileCollisionIds.push(collisionId);
               }
             }
           }
-        } catch (error) {
-          console.error(`❌ Error creating object in tile ${tile.id}:`, error);
-          // Continue with the next object
         }
-      });
-
-      // Store collision object IDs for cleanup
-      this.terrainCollisionObjects.set(tile.id, tileCollisionIds);
-
-      return tileGroup;
-    } catch (error) {
-      console.error(`❌ Error in createTileObjects for tile ${tile.id}:`, error);
-      // Return an empty group to avoid null errors
-      return new THREE.Group();
+      } catch (error) {
+        console.error(`Error creating object in tile ${tile.id}:`, error);
+        logger.error(`Error creating object in tile ${tile.id}: ${error.message}`);
+        // Continue to next object
+      }
     }
+
+    // Store collision object IDs for cleanup
+    this.terrainCollisionObjects.set(tile.id, tileCollisionIds);
+
+    return tileGroup;
   }
 
   private addTileGround(tileGroup: THREE.Group, tile: MapTile, tileCollisionIds: string[]): void {
@@ -482,7 +509,20 @@ export class MapManager {
 
       tileCollisionIds.push(groundCollisionId);
     } catch (error) {
-      console.error(`❌ Error adding ground for tile ${tile.id}:`, error);
+      console.error(`Error creating ground for tile ${tile.id}:`, error);
+      logger.error(`Error creating ground for tile ${tile.id}: ${error.message}`);
+      // Create a fallback ground plane with simple material
+      const fallbackGround = new THREE.Mesh(
+        new THREE.PlaneGeometry(this.tileSize, this.tileSize),
+        new THREE.MeshBasicMaterial({ color: 0x10B981 })
+      );
+      fallbackGround.rotation.x = -Math.PI / 2;
+      fallbackGround.position.set(
+        tile.x * this.tileSize,
+        0.01,
+        tile.z * this.tileSize
+      );
+      tileGroup.add(fallbackGround);
     }
   }
 
@@ -548,64 +588,62 @@ export class MapManager {
 
       return collisionId;
     } catch (error) {
-      console.error('Error adding object collision:', error);
-      return null;
+      console.error(`Error adding collision for object ${objectId}:`, error);
+      return null; // Skip collision for this object
     }
   }
 
   private getObjectCollisionBounds(objectType: string, scale: { x: number; y: number; z: number }) {
-    try {
-      const bounds = {
-        tree: { type: 'capsule' as const, center: { x: 0, y: 1.5, z: 0 }, radius: 0.3, height: 3.0 },
-        rock: { type: 'sphere' as const, center: { x: 0, y: 0.5, z: 0 }, radius: 0.6 },
-        building: { type: 'box' as const, center: { x: 0, y: 1.5, z: 0 }, size: { x: 2, y: 3, z: 2 } },
-        ruins: { type: 'box' as const, center: { x: 0, y: 1, z: 0 }, size: { x: 1.6, y: 2, z: 1.6 } },
-        chest: { type: 'box' as const, center: { x: 0, y: 0.3, z: 0 }, size: { x: 0.8, y: 0.6, z: 0.6 } },
-        crate: { type: 'box' as const, center: { x: 0, y: 0.3, z: 0 }, size: { x: 0.6, y: 0.6, z: 0.6 } },
-        well: { type: 'capsule' as const, center: { x: 0, y: 1, z: 0 }, radius: 0.9, height: 2.0 },
-        statue: { type: 'capsule' as const, center: { x: 0, y: 1, z: 0 }, radius: 0.4, height: 2.0 },
-        fence: { type: 'box' as const, center: { x: 0, y: 0.5, z: 0 }, size: { x: 2.2, y: 1.0, z: 0.2 } },
-        cart: { type: 'box' as const, center: { x: 0, y: 0.4, z: 0 }, size: { x: 1.2, y: 0.8, z: 0.8 } },
-        bridge: { type: 'box' as const, center: { x: 0, y: 0.1, z: 0 }, size: { x: 4, y: 0.2, z: 1 } }
-      };
+    const bounds = {
+      tree: { type: 'capsule' as const, center: { x: 0, y: 1.5, z: 0 }, radius: 0.3, height: 3.0 },
+      rock: { type: 'sphere' as const, center: { x: 0, y: 0.5, z: 0 }, radius: 0.6 },
+      building: { type: 'box' as const, center: { x: 0, y: 1.5, z: 0 }, size: { x: 2, y: 3, z: 2 } },
+      ruins: { type: 'box' as const, center: { x: 0, y: 1, z: 0 }, size: { x: 1.6, y: 2, z: 1.6 } },
+      chest: { type: 'box' as const, center: { x: 0, y: 0.3, z: 0 }, size: { x: 0.8, y: 0.6, z: 0.6 } },
+      crate: { type: 'box' as const, center: { x: 0, y: 0.3, z: 0 }, size: { x: 0.6, y: 0.6, z: 0.6 } },
+      well: { type: 'capsule' as const, center: { x: 0, y: 1, z: 0 }, radius: 0.9, height: 2.0 },
+      statue: { type: 'capsule' as const, center: { x: 0, y: 1, z: 0 }, radius: 0.4, height: 2.0 },
+      fence: { type: 'box' as const, center: { x: 0, y: 0.5, z: 0 }, size: { x: 2.2, y: 1.0, z: 0.2 } },
+      cart: { type: 'box' as const, center: { x: 0, y: 0.4, z: 0 }, size: { x: 1.2, y: 0.8, z: 0.8 } },
+      bridge: { type: 'box' as const, center: { x: 0, y: 0.1, z: 0 }, size: { x: 4, y: 0.2, z: 1 } }
+    };
 
-      const baseBounds = bounds[objectType as keyof typeof bounds];
-      if (!baseBounds) return null;
+    const baseBounds = bounds[objectType as keyof typeof bounds];
+    if (!baseBounds) return null;
 
-      // Apply scale to bounds
-      const scaledBounds = { ...baseBounds };
-      if ('radius' in scaledBounds && scaledBounds.radius) {
-        scaledBounds.radius *= Math.max(scale.x, scale.z);
-      }
-      if ('height' in scaledBounds && scaledBounds.height) {
-        scaledBounds.height *= scale.y;
-      }
-      if ('size' in scaledBounds && scaledBounds.size) {
-        scaledBounds.size = {
-          x: scaledBounds.size.x * scale.x,
-          y: scaledBounds.size.y * scale.y,
-          z: scaledBounds.size.z * scale.z
-        };
-      }
-      if ('center' in scaledBounds && scaledBounds.center) {
-        scaledBounds.center = {
-          x: scaledBounds.center.x * scale.x,
-          y: scaledBounds.center.y * scale.y,
-          z: scaledBounds.center.z * scale.z
-        };
-      }
-
-      return scaledBounds;
-    } catch (error) {
-      console.error('Error getting object collision bounds:', error);
-      return null;
+    // Apply scale to bounds
+    const scaledBounds = { ...baseBounds };
+    if (scaledBounds.radius) {
+      scaledBounds.radius *= Math.max(scale.x, scale.z);
     }
+    if (scaledBounds.height) {
+      scaledBounds.height *= scale.y;
+    }
+    if (scaledBounds.size) {
+      scaledBounds.size = {
+        x: scaledBounds.size.x * scale.x,
+        y: scaledBounds.size.y * scale.y,
+        z: scaledBounds.size.z * scale.z
+      };
+    }
+    if (scaledBounds.center) {
+      scaledBounds.center = {
+        x: scaledBounds.center.x * scale.x,
+        y: scaledBounds.center.y * scale.y,
+        z: scaledBounds.center.z * scale.z
+      };
+    }
+
+    return scaledBounds;
   }
 
   private createNPC(obj: MapObject, tile: MapTile): void {
     try {
       const npcData = obj.properties?.npcData as NPCData;
-      if (!npcData) return;
+      if (!npcData) {
+        console.warn(`⚠️ Missing NPC data for object in tile ${tile.id}`);
+        return;
+      }
 
       const position = new THREE.Vector3(obj.position.x, obj.position.y, obj.position.z);
       const npc = new NPC(npcData, position);
@@ -615,7 +653,8 @@ export class MapManager {
       
       console.log(`👤 Created NPC ${npcData.name} at tile ${tile.id}`);
     } catch (error) {
-      console.error('Error creating NPC:', error);
+      console.error(`Error creating NPC in tile ${tile.id}:`, error);
+      logger.error(`Error creating NPC in tile ${tile.id}: ${error.message}`);
     }
   }
 
@@ -624,7 +663,7 @@ export class MapManager {
       try {
         npc.update();
       } catch (error) {
-        console.error(`Error updating NPC ${npc.data.id}:`, error);
+        console.error(`Error updating NPC ${npc.data.name}:`, error);
       }
     });
   }
@@ -639,27 +678,33 @@ export class MapManager {
           // this.callbacks.onNPCInteraction(npc);
         }
       } catch (error) {
-        console.error(`Error checking interactions for NPC ${npc.data.id}:`, error);
+        console.error(`Error checking NPC interaction:`, error);
       }
     });
   }
 
   getNearbyNPCs(position: THREE.Vector3, radius: number = 3): NPC[] {
     const nearbyNPCs: NPC[] = [];
-    try {
-      this.loadedNPCs.forEach(npc => {
+    this.loadedNPCs.forEach(npc => {
+      try {
         if (npc.distanceTo(position) <= radius) {
           nearbyNPCs.push(npc);
         }
-      });
-    } catch (error) {
-      console.error('Error getting nearby NPCs:', error);
-    }
+      } catch (error) {
+        console.error(`Error getting nearby NPCs:`, error);
+      }
+    });
     return nearbyNPCs;
   }
 
   private createObjectMesh(obj: MapObject, biome: string, index: number): THREE.Object3D | null {
     try {
+      // Skip if object has invalid data
+      if (!obj.position || !obj.scale || !obj.rotation) {
+        console.warn(`⚠️ Invalid object data at index ${index} in biome ${biome}`);
+        return null;
+      }
+      
       const cacheKey = `${obj.type}_${biome}_${obj.scale.x}_${obj.scale.y}_${obj.scale.z}`;
       
       // Check cache for similar objects
@@ -764,7 +809,7 @@ export class MapManager {
           return this.createCart(obj);
         
         default:
-          // For unknown types, create a simple box placeholder
+          // Simple fallback for unrecognized types
           geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
           material = new THREE.MeshLambertMaterial({ color: 0x808080 });
           break;
@@ -782,9 +827,19 @@ export class MapManager {
 
       return mesh;
     } catch (error) {
-      console.error(`Error creating object mesh for ${obj.type}:`, error);
-      // Return null instead of throwing to prevent cascading failures
-      return null;
+      console.error(`Error creating object mesh:`, error);
+      logger.error(`Error creating object mesh: ${error.message}`);
+      
+      // Return a simple fallback object on error
+      try {
+        const fallbackGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const fallbackMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const fallbackMesh = new THREE.Mesh(fallbackGeometry, fallbackMaterial);
+        fallbackMesh.position.set(obj.position.x, obj.position.y, obj.position.z);
+        return fallbackMesh;
+      } catch (e) {
+        return null; // Last resort fallback
+      }
     }
   }
 
@@ -835,13 +890,13 @@ export class MapManager {
 
       return chestGroup;
     } catch (error) {
-      console.error('Error creating chest:', error);
-      // Return a simple fallback mesh
+      console.error(`Error creating chest:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.BoxGeometry(0.8, 0.5, 0.6),
-        new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+        new THREE.MeshBasicMaterial({ color: 0x8B4513 })
       );
-      fallback.position.set(obj.position.x, obj.position.y, obj.position.z);
+      fallback.position.set(obj.position.x, obj.position.y + 0.25, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -890,13 +945,13 @@ export class MapManager {
 
       return crateGroup;
     } catch (error) {
-      console.error('Error creating crate:', error);
-      // Return a simple fallback mesh
+      console.error(`Error creating crate:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.BoxGeometry(0.6, 0.6, 0.6),
-        new THREE.MeshLambertMaterial({ color: 0xD2B48C })
+        new THREE.MeshBasicMaterial({ color: 0xD2B48C })
       );
-      fallback.position.set(obj.position.x, obj.position.y, obj.position.z);
+      fallback.position.set(obj.position.x, obj.position.y + 0.3, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -941,12 +996,13 @@ export class MapManager {
 
       return plantGroup;
     } catch (error) {
-      console.error('Error creating plant:', error);
+      console.error(`Error creating plant:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.1, 0.1, 0.8, 4),
-        new THREE.MeshLambertMaterial({ color: 0x228B22 })
+        new THREE.CylinderGeometry(0.05, 0.05, 0.8, 4),
+        new THREE.MeshBasicMaterial({ color: 0x228B22 })
       );
-      fallback.position.set(obj.position.x, obj.position.y, obj.position.z);
+      fallback.position.set(obj.position.x, obj.position.y + 0.4, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -1004,12 +1060,13 @@ export class MapManager {
 
       return mushroomGroup;
     } catch (error) {
-      console.error('Error creating mushroom:', error);
+      console.error(`Error creating mushroom:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.1, 0.1, 0.3, 8),
-        new THREE.MeshLambertMaterial({ color: 0xF5F5DC })
+        new THREE.ConeGeometry(0.2, 0.4, 8),
+        new THREE.MeshBasicMaterial({ color: 0xDC143C })
       );
-      fallback.position.set(obj.position.x, obj.position.y, obj.position.z);
+      fallback.position.set(obj.position.x, obj.position.y + 0.2, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -1052,12 +1109,13 @@ export class MapManager {
 
       return crystalGroup;
     } catch (error) {
-      console.error('Error creating crystal:', error);
+      console.error(`Error creating crystal:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.ConeGeometry(0.3, 1.0, 6),
-        new THREE.MeshLambertMaterial({ color: 0x9370DB })
+        new THREE.MeshBasicMaterial({ color: 0x9370DB })
       );
-      fallback.position.set(obj.position.x, obj.position.y, obj.position.z);
+      fallback.position.set(obj.position.x, obj.position.y + 0.5, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -1104,13 +1162,14 @@ export class MapManager {
 
       return logGroup;
     } catch (error) {
-      console.error('Error creating log:', error);
+      console.error(`Error creating log:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.CylinderGeometry(0.2, 0.2, 2, 8),
-        new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+        new THREE.MeshBasicMaterial({ color: 0x8B4513 })
       );
-      fallback.position.set(obj.position.x, obj.position.y, obj.position.z);
       fallback.rotation.z = Math.PI / 2;
+      fallback.position.set(obj.position.x, obj.position.y + 0.2, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -1167,10 +1226,11 @@ export class MapManager {
 
       return bushGroup;
     } catch (error) {
-      console.error('Error creating berry bush:', error);
+      console.error(`Error creating berry bush:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.SphereGeometry(0.6, 8, 6),
-        new THREE.MeshLambertMaterial({ color: 0x006400 })
+        new THREE.MeshBasicMaterial({ color: 0x006400 })
       );
       fallback.position.set(obj.position.x, obj.position.y + 0.4, obj.position.z);
       return new THREE.Group().add(fallback);
@@ -1240,12 +1300,13 @@ export class MapManager {
 
       return wellGroup;
     } catch (error) {
-      console.error('Error creating well:', error);
+      console.error(`Error creating well:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.8, 0.8, 1, 12),
-        new THREE.MeshLambertMaterial({ color: 0x808080 })
+        new THREE.CylinderGeometry(0.8, 0.8, 1.5, 12),
+        new THREE.MeshBasicMaterial({ color: 0x696969 })
       );
-      fallback.position.set(obj.position.x, obj.position.y + 0.5, obj.position.z);
+      fallback.position.set(obj.position.x, obj.position.y + 0.75, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -1315,10 +1376,11 @@ export class MapManager {
 
       return campfireGroup;
     } catch (error) {
-      console.error('Error creating campfire:', error);
+      console.error(`Error creating campfire:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.CylinderGeometry(0.4, 0.4, 0.1, 12),
-        new THREE.MeshLambertMaterial({ color: 0x333333 })
+        new THREE.MeshBasicMaterial({ color: 0x654321 })
       );
       fallback.position.set(obj.position.x, obj.position.y + 0.05, obj.position.z);
       return new THREE.Group().add(fallback);
@@ -1367,12 +1429,13 @@ export class MapManager {
 
       return fenceGroup;
     } catch (error) {
-      console.error('Error creating fence:', error);
+      console.error(`Error creating fence:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
-        new THREE.BoxGeometry(2.2, 1.0, 0.1),
-        new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+        new THREE.BoxGeometry(2, 0.8, 0.1),
+        new THREE.MeshBasicMaterial({ color: 0x8B4513 })
       );
-      fallback.position.set(obj.position.x, obj.position.y + 0.5, obj.position.z);
+      fallback.position.set(obj.position.x, obj.position.y + 0.4, obj.position.z);
       return new THREE.Group().add(fallback);
     }
   }
@@ -1452,10 +1515,11 @@ export class MapManager {
 
       return cartGroup;
     } catch (error) {
-      console.error('Error creating cart:', error);
+      console.error(`Error creating cart:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.BoxGeometry(1.2, 0.4, 0.8),
-        new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+        new THREE.MeshBasicMaterial({ color: 0x8B4513 })
       );
       fallback.position.set(obj.position.x, obj.position.y + 0.2, obj.position.z);
       return new THREE.Group().add(fallback);
@@ -1534,28 +1598,25 @@ export class MapManager {
 
       return treeGroup;
     } catch (error) {
-      console.error('Error creating tree:', error);
-      // Create a very simple fallback tree
-      const fallbackGroup = new THREE.Group();
-      
-      // Simple trunk
+      console.error(`Error creating tree:`, error);
+      // Return a simple fallback
+      const fallback = new THREE.Group();
+      // Trunk
       const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.2, 0.3, 3, 8),
-        new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+        new THREE.CylinderGeometry(0.2, 0.3, 2, 8),
+        new THREE.MeshBasicMaterial({ color: 0x8B4513 })
       );
-      trunk.position.y = 1.5;
-      fallbackGroup.add(trunk);
-      
-      // Simple leaves
+      trunk.position.y = 1;
+      fallback.add(trunk);
+      // Leaves
       const leaves = new THREE.Mesh(
         new THREE.SphereGeometry(1, 8, 6),
-        new THREE.MeshLambertMaterial({ color: 0x228B22 })
+        new THREE.MeshBasicMaterial({ color: 0x228B22 })
       );
-      leaves.position.y = 3.5;
-      fallbackGroup.add(leaves);
-      
-      fallbackGroup.position.set(obj.position.x, obj.position.y, obj.position.z);
-      return fallbackGroup;
+      leaves.position.y = 2.5;
+      fallback.add(leaves);
+      fallback.position.set(obj.position.x, obj.position.y, obj.position.z);
+      return fallback;
     }
   }
 
@@ -1618,10 +1679,11 @@ export class MapManager {
 
       return flowerGroup;
     } catch (error) {
-      console.error('Error creating flower:', error);
+      console.error(`Error creating flower:`, error);
+      // Return a simple fallback
       const fallback = new THREE.Mesh(
         new THREE.CylinderGeometry(0.05, 0.05, 0.5, 4),
-        new THREE.MeshLambertMaterial({ color: 0x228B22 })
+        new THREE.MeshBasicMaterial({ color: 0x228B22 })
       );
       fallback.position.set(obj.position.x, obj.position.y + 0.25, obj.position.z);
       return new THREE.Group().add(fallback);
@@ -1629,81 +1691,80 @@ export class MapManager {
   }
 
   private unloadDistantTiles(playerTileX: number, playerTileZ: number): void {
-    try {
-      const unloadDistance = this.loadDistance + 1;
-      const tilesToUnload: string[] = [];
+    const unloadDistance = this.loadDistance + 1;
+    const tilesToUnload: string[] = [];
 
-      this.loadedTiles.forEach((tileGroup, tileId) => {
-        const [x, z] = tileId.split('_').map(Number);
-        const distance = Math.max(
-          Math.abs(x - playerTileX),
-          Math.abs(z - playerTileZ)
-        );
+    this.loadedTiles.forEach((tileGroup, tileId) => {
+      const [x, z] = tileId.split('_').map(Number);
+      const distance = Math.max(
+        Math.abs(x - playerTileX),
+        Math.abs(z - playerTileZ)
+      );
 
-        if (distance > unloadDistance) {
-          tilesToUnload.push(tileId);
+      if (distance > unloadDistance) {
+        tilesToUnload.push(tileId);
+      }
+    });
+
+    tilesToUnload.forEach(tileId => {
+      const tileGroup = this.loadedTiles.get(tileId);
+      if (tileGroup) {
+        this.scene.remove(tileGroup);
+        this.loadedTiles.delete(tileId);
+
+        // Clean up collision objects for this tile
+        const collisionIds = this.terrainCollisionObjects.get(tileId);
+        if (collisionIds) {
+          collisionIds.forEach(id => {
+            collisionSystem.unregisterObject(id);
+          });
+          this.terrainCollisionObjects.delete(tileId);
         }
-      });
 
-      tilesToUnload.forEach(tileId => {
-        const tileGroup = this.loadedTiles.get(tileId);
-        if (tileGroup) {
-          this.scene.remove(tileGroup);
-          this.loadedTiles.delete(tileId);
-
-          // Clean up collision objects for this tile
-          const collisionIds = this.terrainCollisionObjects.get(tileId);
-          if (collisionIds) {
-            collisionIds.forEach(id => {
-              collisionSystem.unregisterObject(id);
-            });
-            this.terrainCollisionObjects.delete(tileId);
-          }
-
-          // Also clean up interactable objects for this tile
-          if (this.character) {
-            const interactableManager = this.character.getInteractableObjectManager();
-            const allObjects = interactableManager.getAllObjects();
-            
-            allObjects.forEach(object => {
-              if (object.id.startsWith(tileId)) {
-                interactableManager.removeObject(object.id, false); // Don't remove from scene as tile is already removed
-              }
-            });
-          }
+        // Also clean up interactable objects for this tile
+        if (this.character) {
+          const interactableManager = this.character.getInteractableObjectManager();
+          const allObjects = interactableManager.getAllObjects();
+          
+          allObjects.forEach(object => {
+            if (object.id.startsWith(tileId)) {
+              interactableManager.removeObject(object.id, false); // Don't remove from scene as tile is already removed
+            }
+          });
         }
-      });
 
-      // Also unload distant NPCs (but preserve the starting NPC)
-      const npcsToUnload: string[] = [];
-      this.loadedNPCs.forEach((npc, npcId) => {
-        // Never unload the starting NPC
-        if (npcId === 'starting_guide_npc') return;
-        
-        const npcPos = npc.getPosition();
-        const npcTileX = Math.floor(npcPos.x / this.tileSize);
-        const npcTileZ = Math.floor(npcPos.z / this.tileSize);
-        const distance = Math.max(
-          Math.abs(npcTileX - playerTileX),
-          Math.abs(npcTileZ - playerTileZ)
-        );
+        console.log(`🗑️ Unloaded tile ${tileId} and cleaned up collision objects`);
+      }
+    });
 
-        if (distance > unloadDistance) {
-          npcsToUnload.push(npcId);
-        }
-      });
+    // Also unload distant NPCs (but preserve the starting NPC)
+    const npcsToUnload: string[] = [];
+    this.loadedNPCs.forEach((npc, npcId) => {
+      // Never unload the starting NPC
+      if (npcId === 'starting_guide_npc') return;
+      
+      const npcPos = npc.getPosition();
+      const npcTileX = Math.floor(npcPos.x / this.tileSize);
+      const npcTileZ = Math.floor(npcPos.z / this.tileSize);
+      const distance = Math.max(
+        Math.abs(npcTileX - playerTileX),
+        Math.abs(npcTileZ - playerTileZ)
+      );
 
-      npcsToUnload.forEach(npcId => {
-        const npc = this.loadedNPCs.get(npcId);
-        if (npc) {
-          this.scene.remove(npc.mesh);
-          npc.dispose(); // Clean up NPC collision objects
-          this.loadedNPCs.delete(npcId);
-        }
-      });
-    } catch (error) {
-      console.error('Error unloading distant tiles:', error);
-    }
+      if (distance > unloadDistance) {
+        npcsToUnload.push(npcId);
+      }
+    });
+
+    npcsToUnload.forEach(npcId => {
+      const npc = this.loadedNPCs.get(npcId);
+      if (npc) {
+        this.scene.remove(npc.mesh);
+        npc.dispose(); // Clean up NPC collision objects
+        this.loadedNPCs.delete(npcId);
+        console.log(`👤 Unloaded NPC ${npcId}`);
+      }
+    });
   }
 
   getTileInfo(x: number, z: number) {
@@ -1712,61 +1773,85 @@ export class MapManager {
 
   // Performance optimization: Clear mesh cache periodically
   private clearMeshCache(): void {
-    try {
-      if (this.objectMeshCache.size > 100) {
-        // Keep only the 50 most recently used meshes
-        const entries = Array.from(this.objectMeshCache.entries());
-        entries.splice(0, entries.length - 50);
-        this.objectMeshCache.clear();
-        entries.forEach(([key, value]) => {
-          this.objectMeshCache.set(key, value);
-        });
-        console.log('🧹 Cleared object mesh cache');
-      }
-    } catch (error) {
-      console.error('Error clearing mesh cache:', error);
+    if (this.objectMeshCache.size > 100) {
+      // Keep only the 50 most recently used meshes
+      const entries = Array.from(this.objectMeshCache.entries());
+      entries.splice(0, entries.length - 50);
+      this.objectMeshCache.clear();
+      entries.forEach(([key, value]) => {
+        this.objectMeshCache.set(key, value);
+      });
+      console.log('🧹 Cleared object mesh cache');
     }
+  }
+  
+  // Return statistics about the world generation
+  getStats(): any {
+    return {
+      loadedTiles: this.loadedTiles.size,
+      allTiles: this.allGeneratedTiles.size,
+      aiGeneratorTiles: this.aiGenerator.getTileCount(),
+      npcs: this.loadedNPCs.size,
+      generatingTiles: this.isGenerating.size,
+      generationFailures: this.generationFailures
+    };
+  }
+  
+  // Create a complete default world (for emergency use)
+  createDefaultWorld(): void {
+    console.log('🚨 Creating default emergency world');
+    
+    // Create a 5x5 grid of tiles around origin
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) {
+        this.createDefaultTile(x, z);
+      }
+    }
+    
+    // Create starting NPC if not already created
+    if (!this.hasCreatedStartingNPC) {
+      this.createStartingNPC();
+      this.hasCreatedStartingNPC = true;
+    }
+    
+    console.log('✅ Created default world with 25 tiles');
   }
 
   dispose(): void {
     console.log('🧹 Disposing MapManager...');
     
-    try {
-      // Remove all loaded tiles
-      this.loadedTiles.forEach(tileGroup => {
-        this.scene.remove(tileGroup);
+    // Remove all loaded tiles
+    this.loadedTiles.forEach(tileGroup => {
+      this.scene.remove(tileGroup);
+    });
+    this.loadedTiles.clear();
+    
+    // Remove all NPCs
+    this.loadedNPCs.forEach(npc => {
+      this.scene.remove(npc.mesh);
+      npc.dispose(); // Clean up NPC collision objects
+    });
+    this.loadedNPCs.clear();
+    
+    // Clean up collision objects
+    this.terrainCollisionObjects.forEach(collisionIds => {
+      collisionIds.forEach(id => {
+        collisionSystem.unregisterObject(id);
       });
-      this.loadedTiles.clear();
-      
-      // Remove all NPCs
-      this.loadedNPCs.forEach(npc => {
-        this.scene.remove(npc.mesh);
-        npc.dispose(); // Clean up NPC collision objects
-      });
-      this.loadedNPCs.clear();
-      
-      // Clean up collision objects
-      this.terrainCollisionObjects.forEach(collisionIds => {
-        collisionIds.forEach(id => {
-          collisionSystem.unregisterObject(id);
-        });
-      });
-      this.terrainCollisionObjects.clear();
-      
-      // Clear generation state
-      this.isGenerating.clear();
-      
-      // Clear caches (but preserve tile data for potential reload)
-      this.objectMeshCache.clear();
+    });
+    this.terrainCollisionObjects.clear();
+    
+    // Clear generation state
+    this.isGenerating.clear();
+    
+    // Clear caches (but preserve tile data for potential reload)
+    this.objectMeshCache.clear();
 
-      // Clear interactable objects
-      if (this.character) {
-        this.character.getInteractableObjectManager().clear();
-      }
-
-      console.log('✅ MapManager disposed successfully');
-    } catch (error) {
-      console.error('Error disposing MapManager:', error);
+    // Clear interactable objects
+    if (this.character) {
+      this.character.getInteractableObjectManager().clear();
     }
+
+    console.log('✅ MapManager disposed successfully');
   }
 }

@@ -54,6 +54,7 @@ export const useGameState = (gameId?: string) => {
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [characterCustomization, setCharacterCustomization] = useState<CharacterCustomization>(DEFAULT_CUSTOMIZATION);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingAttempts, setLoadingAttempts] = useState(0);
 
   return {
     gameRef,
@@ -87,5 +88,7 @@ export const useGameState = (gameId?: string) => {
     setCharacterCustomization,
     loadingProgress,
     setLoadingProgress,
+    loadingAttempts,
+    setLoadingAttempts,
   };
 };

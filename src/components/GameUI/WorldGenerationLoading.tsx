@@ -14,6 +14,7 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
   const [completed, setCompleted] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
   const [showSkipButton, setShowSkipButton] = useState(false);
+  const [forceCompletionAttempted, setForceCompletionAttempted] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -27,9 +28,9 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
       const newTime = Math.floor((Date.now() - startTime) / 1000);
       setLoadingTime(newTime);
       
-      // Show skip button after 10 seconds
-      if (newTime >= 10 && !showSkipButton) {
-        console.log('⏱️ Showing skip button after 10 seconds');
+      // Show skip button after 8 seconds
+      if (newTime >= 8 && !showSkipButton) {
+        console.log('⏱️ Showing skip button after 8 seconds');
         setShowSkipButton(true);
       }
     }, 1000);
@@ -49,68 +50,71 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
 
     // Set multiple timeouts with increasing urgency
     
-    // First timeout at 8 seconds - speed up progress if it's lagging
+    // First timeout at 5 seconds - speed up progress if it's lagging
     const firstTimeout = setTimeout(() => {
       if (!isMounted) return;
-      console.log('⏱️ 8-second timeout reached for world generation');
+      console.log('⏱️ 5-second timeout reached for world generation');
       if (progress < 50) {
         setProgress(Math.max(progress, 50));
         setLoadingMessage("Creating landscape features...");
       }
-    }, 8000);
+    }, 5000);
     
-    // Main timeout at 15 seconds - should normally complete by now
+    // Main timeout at 12 seconds - should normally complete by now
     const mainTimeout = setTimeout(() => {
       if (!isMounted) return;
-      console.log('⏱️ 15-second timeout reached for world generation');
+      console.log('⏱️ 12-second timeout reached for world generation');
       if (progress < 75) {
         setProgress(Math.max(progress, 75));
         setLoadingMessage("Finalizing world details...");
       }
-    }, 15000);
+    }, 12000);
     
-    // Force timeout at 20 seconds - this should definitely complete
+    // Force timeout at 15 seconds - this should definitely complete
     const forceTimeout = setTimeout(() => {
       if (!isMounted) return;
       
-      console.log('⏱️ 20-second timeout reached for world generation - forcing completion');
+      console.log('⏱️ 15-second timeout reached for world generation - forcing completion');
       setTimeoutTriggered(true);
       setProgress(100);
       setCompleted(true);
       setLoadingMessage("World generation complete!");
       
-      if (onForceComplete) {
-        console.log('🚀 Calling onForceComplete callback from 20s timeout');
+      if (onForceComplete && !forceCompletionAttempted) {
+        console.log('🚀 Calling onForceComplete callback from 15s timeout');
+        setForceCompletionAttempted(true);
         onForceComplete();
       }
-    }, 20000);
+    }, 15000);
 
-    // Emergency timeout at 25 seconds as a safety measure
+    // Emergency timeout at 18 seconds as a safety measure
     const emergencyTimeout = setTimeout(() => {
       if (!isMounted) return;
       
-      console.log('⚠️ EMERGENCY 25-second timeout reached, forcing completion');
+      console.log('⚠️ EMERGENCY 18-second timeout reached, forcing completion');
       setTimeoutTriggered(true);
       setProgress(100);
       setCompleted(true);
       
-      if (onForceComplete) {
+      if (onForceComplete && !forceCompletionAttempted) {
         console.log('🚨 Calling onForceComplete callback from emergency timeout');
+        setForceCompletionAttempted(true);
         onForceComplete();
       }
-    }, 25000);
+    }, 18000);
     
-    // Final failsafe at 30 seconds that will definitely force completion
+    // Final failsafe at 20 seconds that will definitely force completion
     const finalFailsafe = setTimeout(() => {
       if (!isMounted) return;
       
-      console.log('🚨 CRITICAL 30-second timeout reached, forcing completion with direct callback');
+      console.log('🚨 CRITICAL 20-second timeout reached, forcing completion with direct callback');
       setTimeoutTriggered(true);
       setProgress(100);
       setCompleted(true);
       
-      if (onForceComplete) {
+      if (onForceComplete && !forceCompletionAttempted) {
         console.log('💥 Emergency force complete');
+        setForceCompletionAttempted(true);
         onForceComplete();
       }
       
@@ -122,7 +126,7 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
       } catch (e) {
         console.error('Failed to dispatch synthetic event:', e);
       }
-    }, 30000);
+    }, 20000);
 
     // Update loading messages to provide context
     const messages = [
@@ -186,16 +190,17 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
       clearTimeout(finalFailsafe);
       console.log('🌍 World generation loading screen unmounted');
     };
-  }, [scenario, onForceComplete, showSkipButton, progress]);
+  }, [scenario, onForceComplete, showSkipButton, progress, forceCompletionAttempted]);
 
   // Auto-call onForceComplete when progress reaches 100%
   useEffect(() => {
-    if (progress >= 99 && !completed && onForceComplete) {
+    if (progress >= 99 && !completed && onForceComplete && !forceCompletionAttempted) {
       console.log('🚀 Progress reached 99%, triggering completion');
       setCompleted(true);
+      setForceCompletionAttempted(true);
       onForceComplete();
     }
-  }, [progress, completed, onForceComplete]);
+  }, [progress, completed, onForceComplete, forceCompletionAttempted]);
 
   // Select icon based on scenario theme
   const getIcon = () => {
@@ -217,11 +222,12 @@ export const WorldGenerationLoading: React.FC<WorldGenerationLoadingProps> = ({ 
   };
 
   const handleForceComplete = () => {
-    if (onForceComplete && !completed) {
+    if (onForceComplete && !forceCompletionAttempted) {
       console.log('👆 Manual force completion requested by user');
       setTimeoutTriggered(true);
       setProgress(100);
       setCompleted(true);
+      setForceCompletionAttempted(true);
       onForceComplete();
     }
   };
