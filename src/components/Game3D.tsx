@@ -31,7 +31,6 @@ import * as THREE from 'three';
 import { CollisionSystem } from '../services/CollisionSystem';
 import { GameScenario } from './ScenarioSelector';
 import { ObjectManagerUI } from './ObjectManagerUI';
-import { CustomObjectsButton } from './CustomObjectsButton';
 
 interface Game3DProps {
   gameId?: string;
@@ -555,12 +554,6 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     <div className="relative w-full h-screen bg-gradient-to-b from-sky-200 to-sky-400">
       <div ref={mountRef} className="w-full h-full" />
       
-      {/* Custom Objects Button */}
-      <CustomObjectsButton 
-        onClick={() => uiState.setShowObjectManager(true)} 
-        objectCount={customObjectCount}
-      />
-      
       {/* Notification Display */}
       <NotificationDisplay />
       
@@ -597,8 +590,10 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
         onShowLogViewer={() => uiState.setShowLogViewer(true)}
         onShowSaveUI={() => uiState.setShowSaveUI(true)}
         onShowSettings={() => uiState.setShowSettings(true)}
+        onShowObjectManager={() => uiState.setShowObjectManager(true)}
         onReturnToMenu={onReturnToMenu}
         autoSaveState={autoSaveState}
+        customObjectCount={customObjectCount}
       />
 
       {/* Game Status */}

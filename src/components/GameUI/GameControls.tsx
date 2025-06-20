@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, Terminal, Home, User, Keyboard, TrendingUp, Save, CheckCircle, XCircle, Loader2, Clock, Settings } from 'lucide-react';
+import { Package, Terminal, Home, User, Keyboard, TrendingUp, Save, CheckCircle, XCircle, Loader2, Clock, Settings, Box } from 'lucide-react';
 import { AutoSaveState } from '../../hooks/useAutoSave';
 
 interface GameControlsProps {
@@ -10,8 +10,10 @@ interface GameControlsProps {
   onShowLogViewer: () => void;
   onShowSaveUI: () => void;
   onShowSettings: () => void;
+  onShowObjectManager: () => void;
   onReturnToMenu: () => void;
   autoSaveState: AutoSaveState;
+  customObjectCount?: number;
 }
 
 export const GameControls: React.FC<GameControlsProps> = ({
@@ -22,8 +24,10 @@ export const GameControls: React.FC<GameControlsProps> = ({
   onShowLogViewer,
   onShowSaveUI,
   onShowSettings,
+  onShowObjectManager,
   onReturnToMenu,
   autoSaveState,
+  customObjectCount = 0
 }) => {
   const getSaveButtonIcon = () => {
     switch (autoSaveState.status) {
@@ -71,6 +75,18 @@ export const GameControls: React.FC<GameControlsProps> = ({
 
   return (
     <div className="absolute top-4 right-4 flex gap-2">
+      <button
+        onClick={onShowObjectManager}
+        className="bg-black bg-opacity-50 text-white p-2 rounded-lg backdrop-blur-sm hover:bg-opacity-70 transition-all relative"
+        title="Manage Custom Objects"
+      >
+        <Box className="w-5 h-5" />
+        {customObjectCount > 0 && (
+          <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border border-black flex items-center justify-center text-[8px] font-bold">
+            {customObjectCount}
+          </div>
+        )}
+      </button>
       <button
         onClick={onShowCharacterCustomizer}
         className="bg-black bg-opacity-50 text-white p-2 rounded-lg backdrop-blur-sm hover:bg-opacity-70 transition-all"
