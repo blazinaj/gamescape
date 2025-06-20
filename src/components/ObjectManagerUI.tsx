@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Package, X, Edit, Save, Plus, Trash2, ChevronRight, ChevronDown, 
-  LayoutList, Sword, Axe, Scroll, Mountain, Eye, Download, Upload, Info,
-  Tree, Building, PanelLeft, Brush, RotateCw, Search
-} from 'lucide-react';
+import { Package, X, Edit, Save, Plus, Trash2, ChevronRight, ChevronDown, LayoutList, Sword, Axe, Scroll, Mountain, Eye, Download, Upload, Info, Trees as Tree, Building, PanelLeft, Brush, RotateCw, Search } from 'lucide-react';
 
 // Import all object types
 import { CustomizableObject } from '../types/BaseObjectTypes';
