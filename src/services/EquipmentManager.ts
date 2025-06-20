@@ -149,7 +149,17 @@ export class EquipmentManager {
   }
 
   registerCustomWeapons(weapons: CustomWeapon[]): void {
+    if (!weapons || !Array.isArray(weapons)) {
+      console.warn('⚠️ No valid weapons array provided to registerCustomWeapons');
+      return;
+    }
+
     weapons.forEach(weapon => {
+      if (!weapon || typeof weapon !== 'object') {
+        console.warn('⚠️ Invalid weapon object in registerCustomWeapons');
+        return;
+      }
+
       // Store in custom weapons collection
       this.customWeapons.set(weapon.id, weapon);
       
@@ -158,7 +168,9 @@ export class EquipmentManager {
         damage: 30,
         durability: 100,
         range: 2.0,
-        speed: 1.5
+        speed: 1.5,
+        criticalChance: 0.1,
+        criticalMultiplier: 1.5
       };
       
       // Provide default appearance if missing
@@ -196,14 +208,25 @@ export class EquipmentManager {
   }
 
   registerCustomTools(tools: CustomTool[]): void {
+    if (!tools || !Array.isArray(tools)) {
+      console.warn('⚠️ No valid tools array provided to registerCustomTools');
+      return;
+    }
+
     tools.forEach(tool => {
+      if (!tool || typeof tool !== 'object') {
+        console.warn('⚠️ Invalid tool object in registerCustomTools');
+        return;
+      }
+
       // Store in custom tools collection
       this.customTools.set(tool.id, tool);
       
       // Provide default tool stats if missing
       const toolStats = tool.toolStats || {
         efficiency: 1.0,
-        durability: 100
+        durability: 100,
+        harvestLevel: 1
       };
       
       // Provide default appearance if missing
@@ -244,6 +267,11 @@ export class EquipmentManager {
   }
 
   private mapEffectiveAgainstToTargetTypes(effectiveAgainst: string[]): string[] {
+    if (!effectiveAgainst || !Array.isArray(effectiveAgainst) || effectiveAgainst.length === 0) {
+      // Default targets if none specified
+      return ['tree', 'rock'];
+    }
+
     // Map the effectiveAgainst values to standard target types
     const targetMap: Record<string, string[]> = {
       'wood': ['tree', 'bush', 'log'],

@@ -166,33 +166,61 @@ export class InventorySystem {
   }
 
   registerCustomItems(customItems: CustomItem[]): void {
+    if (!customItems || !Array.isArray(customItems)) {
+      console.warn('⚠️ No valid items array provided to registerCustomItems');
+      return;
+    }
+
     customItems.forEach(item => {
+      if (!item || typeof item !== 'object') {
+        console.warn('⚠️ Invalid item object in registerCustomItems');
+        return;
+      }
+
       // Check if properties exist before accessing them
       if (!item.properties) {
-        console.warn(`⚠️ Custom item ${item.id} missing properties, skipping registration`);
-        return;
+        console.warn(`⚠️ Custom item ${item.id} missing properties, using defaults`);
       }
 
       // Store in custom items collection
       this.customItems.set(item.id, item);
       
+      // Default properties if missing
+      const properties = item.properties || {
+        value: 10,
+        weight: 1,
+        rarity: 'common',
+        stackable: true,
+        maxStack: 10,
+        consumable: false,
+        questItem: false,
+        tradeable: true,
+        craftingIngredient: false
+      };
+
+      // Default appearance if missing
+      const appearance = item.appearance || {
+        icon: '📦',
+        primaryColor: '#A9A9A9'
+      };
+      
       // Create standard inventory item representation
       const standardItem: InventoryItem = {
         id: item.id,
-        name: item.name,
-        type: item.type,
-        description: item.description,
-        icon: item.appearance?.icon || '📦', // Use optional chaining and provide fallback
-        stackable: item.properties.stackable,
-        maxStack: item.properties.maxStack,
-        value: item.properties.value,
-        rarity: item.properties.rarity
+        name: item.name || 'Unknown Item',
+        type: item.type || 'material',
+        description: item.description || 'A custom item',
+        icon: appearance.icon || '📦',
+        stackable: properties.stackable,
+        maxStack: properties.maxStack,
+        value: properties.value,
+        rarity: properties.rarity || 'common'
       };
       
       // Add to available items
       this.items.set(item.id, standardItem);
       
-      console.log(`📦 Registered custom item: ${item.name}`);
+      console.log(`📦 Registered custom item: ${item.name || item.id}`);
     });
   }
 

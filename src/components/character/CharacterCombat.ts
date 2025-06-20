@@ -146,7 +146,6 @@ export class CharacterCombat {
     this.experienceSystem.giveExperience('combat', xpGain, 'Enemy Combat');
     
     if (enemyDied) {
-      // Enemy manager handles removal internally, no need to call killEnemy
       // Bonus XP for killing enemy
       this.experienceSystem.giveExperience('combat', closestEnemy.data.experience || 10, 'Enemy Defeated');
     }

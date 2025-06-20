@@ -20,9 +20,19 @@ export class EnemyManager {
   }
 
   registerCustomEnemies(customEnemies: CustomEnemy[]): void {
+    if (!customEnemies || !Array.isArray(customEnemies)) {
+      console.warn('⚠️ No valid enemies array provided to registerCustomEnemies');
+      return;
+    }
+
     customEnemies.forEach(enemy => {
+      if (!enemy || typeof enemy !== 'object') {
+        console.warn('⚠️ Invalid enemy object in registerCustomEnemies');
+        return;
+      }
+
       this.customEnemies.set(enemy.id, enemy);
-      console.log(`🐺 Registered custom enemy: ${enemy.name}`);
+      console.log(`🐺 Registered custom enemy: ${enemy.name || enemy.id}`);
     });
   }
 
@@ -81,22 +91,42 @@ export class EnemyManager {
   }
 
   private convertCustomEnemyToStandard(customEnemy: CustomEnemy): EnemyData {
+    // Ensure stats exists with defaults if missing
+    const stats = customEnemy.stats || {
+      level: 1,
+      health: 100,
+      damage: 20,
+      defense: 5,
+      speed: 2,
+      attackRange: 2,
+      attackSpeed: 1,
+      experienceValue: 50,
+      detectRange: 8,
+      aggression: 5
+    };
+
+    // Ensure appearance exists with defaults if missing
+    const appearance = customEnemy.appearance || {
+      primaryColor: '#8B4513',
+      scale: 1
+    };
+
     return {
       id: customEnemy.id,
-      name: customEnemy.name,
-      type: customEnemy.type as any,
-      maxHealth: customEnemy.stats?.health || 100,
-      damage: customEnemy.stats?.damage || 20,
-      speed: customEnemy.stats?.speed || 2,
-      attackRange: customEnemy.stats?.attackRange || 2,
-      attackCooldown: 1000,
-      experience: customEnemy.stats?.experience || 50,
-      behavior: 'aggressive',
-      detectionRange: customEnemy.stats?.detectRange || 8,
+      name: customEnemy.name || 'Unknown Enemy',
+      type: customEnemy.type as any || 'goblin',
+      maxHealth: stats.health,
+      damage: stats.damage,
+      speed: stats.speed,
+      attackRange: stats.attackRange,
+      attackCooldown: 1000 / (stats.attackSpeed || 1),
+      experience: stats.experienceValue,
+      behavior: (customEnemy.behavior?.isAggressive ? 'aggressive' : 'neutral') as any,
+      detectionRange: stats.detectRange,
       appearance: {
-        scale: customEnemy.appearance?.scale || 1,
-        bodyColor: customEnemy.appearance?.color || '#8B4513',
-        eyeColor: customEnemy.appearance?.eyeColor || '#FF0000'
+        scale: appearance.scale || 1,
+        bodyColor: appearance.primaryColor || '#8B4513',
+        eyeColor: '#FF0000'
       }
     };
   }
