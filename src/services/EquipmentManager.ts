@@ -153,28 +153,42 @@ export class EquipmentManager {
       // Store in custom weapons collection
       this.customWeapons.set(weapon.id, weapon);
       
+      // Provide default combat stats if missing
+      const combatStats = weapon.combatStats || {
+        damage: 30,
+        durability: 100,
+        range: 2.0,
+        speed: 1.5
+      };
+      
+      // Provide default appearance if missing
+      const appearance = weapon.appearance || {
+        icon: '⚔️',
+        primaryColor: '#C0C0C0'
+      };
+      
       // Create standard tool representation
       const standardWeapon: Tool = {
         id: weapon.id,
-        name: weapon.name,
-        type: weapon.weaponType,
-        damage: weapon.combatStats.damage,
-        durability: weapon.combatStats.durability,
-        maxDurability: weapon.combatStats.durability,
-        range: weapon.combatStats.range,
-        cooldown: Math.floor(1000 / weapon.combatStats.speed),
-        description: weapon.description,
-        icon: weapon.appearance.icon || '⚔️',
-        color: weapon.appearance.primaryColor || '#C0C0C0',
+        name: weapon.name || 'Unknown Weapon',
+        type: weapon.weaponType || 'sword',
+        damage: combatStats.damage,
+        durability: combatStats.durability,
+        maxDurability: combatStats.durability,
+        range: combatStats.range,
+        cooldown: Math.floor(1000 / combatStats.speed),
+        description: weapon.description || 'A custom weapon',
+        icon: appearance.icon || '⚔️',
+        color: appearance.primaryColor || '#C0C0C0',
         targetTypes: ['enemy'],
-        attackSpeed: weapon.combatStats.speed,
+        attackSpeed: combatStats.speed,
         weaponType: 'weapon'
       };
       
       // Add to available weapons
       this.weapons.set(weapon.id, standardWeapon);
       
-      console.log(`🔫 Registered custom weapon: ${weapon.name}`);
+      console.log(`🔫 Registered custom weapon: ${weapon.name || weapon.id}`);
     });
     
     // Notify subscribers about new weapons
@@ -186,31 +200,43 @@ export class EquipmentManager {
       // Store in custom tools collection
       this.customTools.set(tool.id, tool);
       
+      // Provide default tool stats if missing
+      const toolStats = tool.toolStats || {
+        efficiency: 1.0,
+        durability: 100
+      };
+      
+      // Provide default appearance if missing
+      const appearance = tool.appearance || {
+        icon: '🔨',
+        primaryColor: '#8B4513'
+      };
+      
       // Determine target types based on effectiveAgainst
-      const targetTypes = this.mapEffectiveAgainstToTargetTypes(tool.effectiveAgainst);
+      const targetTypes = this.mapEffectiveAgainstToTargetTypes(tool.effectiveAgainst || []);
       
       // Create standard tool representation
       const standardTool: Tool = {
         id: tool.id,
-        name: tool.name,
-        type: tool.toolType,
-        damage: Math.floor(10 + tool.toolStats.efficiency * 10), // Base damage scaled by efficiency
-        durability: tool.toolStats.durability,
-        maxDurability: tool.toolStats.durability,
+        name: tool.name || 'Unknown Tool',
+        type: tool.toolType || 'tool',
+        damage: Math.floor(10 + toolStats.efficiency * 10), // Base damage scaled by efficiency
+        durability: toolStats.durability,
+        maxDurability: toolStats.durability,
         range: 2.0, // Default range
-        cooldown: Math.floor(1000 / (tool.toolStats.efficiency * 0.8)),
-        description: tool.description,
-        icon: tool.appearance.icon || '🔨',
-        color: tool.appearance.primaryColor || '#8B4513',
+        cooldown: Math.floor(1000 / (toolStats.efficiency * 0.8)),
+        description: tool.description || 'A custom tool',
+        icon: appearance.icon || '🔨',
+        color: appearance.primaryColor || '#8B4513',
         targetTypes: targetTypes,
-        attackSpeed: tool.toolStats.efficiency,
+        attackSpeed: toolStats.efficiency,
         weaponType: 'tool'
       };
       
       // Add to available tools
       this.tools.set(tool.id, standardTool);
       
-      console.log(`🔨 Registered custom tool: ${tool.name}`);
+      console.log(`🔨 Registered custom tool: ${tool.name || tool.id}`);
     });
     
     // Notify subscribers about new tools
