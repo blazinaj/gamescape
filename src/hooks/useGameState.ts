@@ -22,7 +22,6 @@ export interface GameRef {
   saveSystem: SaveSystem | null;
   enemyManager: EnemyManager | null;
   animationId: number | null;
-  loadingStartTime: number;
 }
 
 export const useGameState = (gameId?: string) => {
@@ -36,7 +35,6 @@ export const useGameState = (gameId?: string) => {
     saveSystem: null,
     enemyManager: null,
     animationId: null,
-    loadingStartTime: Date.now()
   });
 
   const [isLoaded, setIsLoaded] = useState(false);
@@ -53,8 +51,6 @@ export const useGameState = (gameId?: string) => {
   const [gameData, setGameData] = useState<any>(null);
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [characterCustomization, setCharacterCustomization] = useState<CharacterCustomization>(DEFAULT_CUSTOMIZATION);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingAttempts, setLoadingAttempts] = useState(0);
 
   return {
     gameRef,
@@ -86,9 +82,5 @@ export const useGameState = (gameId?: string) => {
     setIsPointerLocked,
     characterCustomization,
     setCharacterCustomization,
-    loadingProgress,
-    setLoadingProgress,
-    loadingAttempts,
-    setLoadingAttempts,
   };
 };

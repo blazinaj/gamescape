@@ -6,8 +6,6 @@ export class AIMapGenerator {
   private generatedTiles = new Map<string, MapTile>();
   private scenarioPrompt: string = '';
   private scenarioTheme: string = '';
-  private failedTileRetries = new Map<string, number>(); // Track retry attempts
-  private maxRetries = 3; // Maximum retries per tile
 
   constructor() {
     this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || '';
@@ -35,36 +33,14 @@ export class AIMapGenerator {
     }
 
     try {
-      // Track retry attempts
-      const currentRetries = this.failedTileRetries.get(tileId) || 0;
-      
-      // If we've exceeded retry limit, use fallback immediately
-      if (currentRetries >= this.maxRetries) {
-        console.log(`🔄 Maximum retries reached for tile ${tileId}, using fallback generation`);
-        return this.generateFallback(x, z, nearbyBiomes);
-      }
-
       if (this.apiKey) {
-        try {
-          console.log(`🧠 Attempting AI generation for tile ${tileId} (attempt ${currentRetries + 1}/${this.maxRetries + 1})`);
-          return await this.generateWithAI(x, z, nearbyBiomes);
-        } catch (aiError) {
-          console.error(`AI generation failed for tile ${tileId}, attempt ${currentRetries + 1}:`, aiError);
-          
-          // Increment retry count
-          this.failedTileRetries.set(tileId, currentRetries + 1);
-          
-          // If we have retries left, try again with fallback
-          console.log(`Using fallback generation for tile ${tileId}`);
-          return this.generateFallback(x, z, nearbyBiomes);
-        }
+        return await this.generateWithAI(x, z, nearbyBiomes);
       } else {
         return this.generateFallback(x, z, nearbyBiomes);
       }
     } catch (error) {
-      console.error('Generation failed completely, using emergency fallback:', error);
-      // Emergency fallback with simple hardcoded tile
-      return this.generateEmergencyFallback(x, z);
+      console.error('AI generation failed, using fallback:', error);
+      return this.generateFallback(x, z, nearbyBiomes);
     }
   }
 
@@ -75,127 +51,112 @@ export class AIMapGenerator {
   private async generateWithAI(x: number, z: number, nearbyBiomes: string[]): Promise<GeneratedContent> {
     const prompt = this.createGenerationPrompt(x, z, nearbyBiomes);
     
-    // Set a reasonable timeout for the API call
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-    try {
-      const response = await fetch(this.baseUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a creative game world generator. Generate diverse, interesting map tiles for a 3D walking game. Always respond with valid JSON matching the specified schema. Include interactive objects like chests, crates, plants, and other discoverable items that players can harvest or interact with.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          functions: [
-            {
-              name: 'generate_map_tile',
-              description: 'Generate a map tile with objects and biome information',
-              parameters: {
-                type: 'object',
-                properties: {
-                  biome: {
-                    type: 'string',
-                    enum: ['forest', 'desert', 'grassland', 'mountains', 'lake', 'village', 'ruins'],
-                    description: 'The biome type for this tile'
-                  },
-                  objects: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        type: {
-                          type: 'string',
-                          enum: [
-                            'tree', 'rock', 'building', 'water', 'hill', 'flower', 'bush', 'ruins', 'npc',
-                            'chest', 'crate', 'plant', 'mushroom', 'crystal', 'log', 'berry_bush',
-                            'well', 'campfire', 'statue', 'fence', 'bridge', 'cart'
-                          ],
-                          description: 'Type of object - includes harvestable items like chests, crates, plants, mushrooms, crystals, and logs'
-                        },
-                        position: {
-                          type: 'object',
-                          properties: {
-                            x: { type: 'number' },
-                            y: { type: 'number' },
-                            z: { type: 'number' }
-                          }
-                        },
-                        scale: {
-                          type: 'object',
-                          properties: {
-                            x: { type: 'number' },
-                            y: { type: 'number' },
-                            z: { type: 'number' }
-                          }
-                        },
-                        rotation: {
-                          type: 'object',
-                          properties: {
-                            x: { type: 'number' },
-                            y: { type: 'number' },
-                            z: { type: 'number' }
-                          }
-                        },
-                        color: { type: 'string' },
-                        properties: { type: 'object' }
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a creative game world generator. Generate diverse, interesting map tiles for a 3D walking game. Always respond with valid JSON matching the specified schema. Include interactive objects like chests, crates, plants, and other discoverable items that players can harvest or interact with.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        functions: [
+          {
+            name: 'generate_map_tile',
+            description: 'Generate a map tile with objects and biome information',
+            parameters: {
+              type: 'object',
+              properties: {
+                biome: {
+                  type: 'string',
+                  enum: ['forest', 'desert', 'grassland', 'mountains', 'lake', 'village', 'ruins'],
+                  description: 'The biome type for this tile'
+                },
+                objects: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      type: {
+                        type: 'string',
+                        enum: [
+                          'tree', 'rock', 'building', 'water', 'hill', 'flower', 'bush', 'ruins', 'npc',
+                          'chest', 'crate', 'plant', 'mushroom', 'crystal', 'log', 'berry_bush',
+                          'well', 'campfire', 'statue', 'fence', 'bridge', 'cart'
+                        ],
+                        description: 'Type of object - includes harvestable items like chests, crates, plants, mushrooms, crystals, and logs'
                       },
-                      required: ['type', 'position', 'scale', 'rotation']
-                    }
-                  },
-                  description: {
-                    type: 'string',
-                    description: 'A brief description of this map tile'
-                  },
-                  theme: {
-                    type: 'string',
-                    description: 'The overall theme or mood of this area'
+                      position: {
+                        type: 'object',
+                        properties: {
+                          x: { type: 'number' },
+                          y: { type: 'number' },
+                          z: { type: 'number' }
+                        }
+                      },
+                      scale: {
+                        type: 'object',
+                        properties: {
+                          x: { type: 'number' },
+                          y: { type: 'number' },
+                          z: { type: 'number' }
+                        }
+                      },
+                      rotation: {
+                        type: 'object',
+                        properties: {
+                          x: { type: 'number' },
+                          y: { type: 'number' },
+                          z: { type: 'number' }
+                        }
+                      },
+                      color: { type: 'string' },
+                      properties: { type: 'object' }
+                    },
+                    required: ['type', 'position', 'scale', 'rotation']
                   }
                 },
-                required: ['biome', 'objects', 'description', 'theme']
-              }
+                description: {
+                  type: 'string',
+                  description: 'A brief description of this map tile'
+                },
+                theme: {
+                  type: 'string',
+                  description: 'The overall theme or mood of this area'
+                }
+              },
+              required: ['biome', 'objects', 'description', 'theme']
             }
-          ],
-          function_call: { name: 'generate_map_tile' },
-          temperature: 0.8,
-          max_tokens: 1500
-        }),
-        signal: controller.signal
-      });
+          }
+        ],
+        function_call: { name: 'generate_map_tile' },
+        temperature: 0.8,
+        max_tokens: 1500
+      })
+    });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const functionCall = data.choices[0]?.message?.function_call;
-      
-      if (!functionCall || functionCall.name !== 'generate_map_tile') {
-        throw new Error('Invalid function call response');
-      }
-
-      const generatedData = JSON.parse(functionCall.arguments);
-      return this.createMapTileFromAI(x, z, generatedData);
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-        throw new Error('API request timed out');
-      }
-      throw error;
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.statusText}`);
     }
+
+    const data = await response.json();
+    const functionCall = data.choices[0]?.message?.function_call;
+    
+    if (!functionCall || functionCall.name !== 'generate_map_tile') {
+      throw new Error('Invalid function call response');
+    }
+
+    const generatedData = JSON.parse(functionCall.arguments);
+    return this.createMapTileFromAI(x, z, generatedData);
   }
 
   private createGenerationPrompt(x: number, z: number, nearbyBiomes: string[]): string {
@@ -239,51 +200,32 @@ export class AIMapGenerator {
   }
 
   private createMapTileFromAI(x: number, z: number, aiData: any): GeneratedContent {
-    // Validate and sanitize data
-    const validatedObjects = (aiData.objects || []).filter(obj => 
-      obj && 
-      typeof obj.type === 'string' && 
-      obj.position && 
-      typeof obj.position.x === 'number' && 
-      typeof obj.position.y === 'number' && 
-      typeof obj.position.z === 'number'
-    ).map(obj => ({
-      ...obj,
-      scale: obj.scale || { x: 1, y: 1, z: 1 },
-      rotation: obj.rotation || { x: 0, y: 0, z: 0 },
-      properties: obj.properties || {}
-    }));
-
-    // Ensure a valid biome
-    const validBiomes = ['forest', 'desert', 'grassland', 'mountains', 'lake', 'village', 'ruins'];
-    const biome = validBiomes.includes(aiData.biome) ? aiData.biome : 'grassland';
-
-    // Create tile with validated data
     const tile: MapTile = {
       id: `${x}_${z}`,
       x,
       z,
-      biome: biome as any,
-      objects: validatedObjects,
+      biome: aiData.biome,
+      objects: aiData.objects.map((obj: any) => ({
+        type: obj.type,
+        position: obj.position,
+        scale: obj.scale || { x: 1, y: 1, z: 1 },
+        rotation: obj.rotation || { x: 0, y: 0, z: 0 },
+        color: obj.color,
+        properties: obj.properties || {}
+      })),
       generated: true
     };
 
-    // Store in cache
     this.generatedTiles.set(tile.id, tile);
-
-    // Provide sensible defaults if AI data is incomplete
-    const description = aiData.description || `A ${biome} area with various features`;
-    const theme = aiData.theme || biome;
 
     return {
       tile,
-      description,
-      theme
+      description: aiData.description,
+      theme: aiData.theme
     };
   }
 
   private generateFallback(x: number, z: number, nearbyBiomes: string[]): GeneratedContent {
-    console.log(`🔄 Generating fallback tile for ${x}, ${z}`);
     // Determine biome based on scenario theme if available
     let biomeOptions: string[] = ['forest', 'grassland', 'desert', 'mountains', 'lake', 'village', 'ruins'];
     
@@ -426,48 +368,6 @@ export class AIMapGenerator {
       tile,
       description,
       theme: this.scenarioTheme || `procedural-${biome}`
-    };
-  }
-  
-  // Emergency fallback with minimal guaranteed content
-  private generateEmergencyFallback(x: number, z: number): GeneratedContent {
-    console.log(`⚠️ EMERGENCY fallback generation for tile ${x}, ${z}`);
-    
-    // Create a basic tile with just a few objects
-    const tile: MapTile = {
-      id: `${x}_${z}`,
-      x,
-      z,
-      biome: 'grassland',
-      objects: [
-        {
-          type: 'tree',
-          position: { x: x * 25 + 5, y: 0, z: z * 25 + 5 },
-          scale: { x: 1, y: 1, z: 1 },
-          rotation: { x: 0, y: 0, z: 0 }
-        },
-        {
-          type: 'rock',
-          position: { x: x * 25 - 5, y: 0, z: z * 25 - 5 },
-          scale: { x: 1, y: 1, z: 1 },
-          rotation: { x: 0, y: 0, z: 0 }
-        },
-        {
-          type: 'chest',
-          position: { x: x * 25, y: 0, z: z * 25 },
-          scale: { x: 1, y: 1, z: 1 },
-          rotation: { x: 0, y: 0, z: 0 }
-        }
-      ],
-      generated: true
-    };
-    
-    this.generatedTiles.set(tile.id, tile);
-    
-    return {
-      tile,
-      description: "An emergency generated tile.",
-      theme: "default"
     };
   }
 
@@ -622,15 +522,5 @@ export class AIMapGenerator {
 
   clearCache(): void {
     this.generatedTiles.clear();
-  }
-  
-  // Get total number of generated tiles
-  getTileCount(): number {
-    return this.generatedTiles.size;
-  }
-  
-  // Clear retry counters
-  clearRetryCounters(): void {
-    this.failedTileRetries.clear();
   }
 }
