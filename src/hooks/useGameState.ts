@@ -11,9 +11,12 @@ import { EnemyManager } from '../services/EnemyManager';
 import { NPC } from '../components/NPC';
 import { CharacterCustomization, DEFAULT_CUSTOMIZATION } from '../types/CharacterTypes';
 import { InteractableObject } from '../services/InteractableObjectManager';
+import { CustomObjectGenerator } from '../services/CustomObjectGenerator';
+import { ObjectDefinitionSystem } from '../services/ObjectDefinitionSystem';
 
 export interface GameRef {
   renderer: GameRenderer | null;
+  scene: THREE.Scene | null;
   character: Character | null;
   inputManager: InputManager | null;
   cameraController: CameraController | null;
@@ -22,11 +25,14 @@ export interface GameRef {
   saveSystem: SaveSystem | null;
   enemyManager: EnemyManager | null;
   animationId: number | null;
+  customObjectGenerator: CustomObjectGenerator | null;
+  objectDefinitionSystem: ObjectDefinitionSystem | null;
 }
 
 export const useGameState = (gameId?: string) => {
   const gameRef = useRef<GameRef>({
     renderer: null,
+    scene: null,
     character: null,
     inputManager: null,
     cameraController: null,
@@ -35,6 +41,8 @@ export const useGameState = (gameId?: string) => {
     saveSystem: null,
     enemyManager: null,
     animationId: null,
+    customObjectGenerator: null,
+    objectDefinitionSystem: null
   });
 
   const [isLoaded, setIsLoaded] = useState(false);

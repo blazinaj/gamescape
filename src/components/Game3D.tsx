@@ -30,6 +30,8 @@ import { Zap, Map as MapIcon, MessageCircle, Package, Skull, Scroll } from 'luci
 import * as THREE from 'three';
 import { CollisionSystem } from '../services/CollisionSystem';
 import { GameScenario } from './ScenarioSelector';
+import { ObjectManagerUI } from './ObjectManagerUI';
+import { CustomObjectsButton } from './CustomObjectsButton';
 
 interface Game3DProps {
   gameId?: string;
@@ -43,8 +45,10 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   const mountRef = useRef<HTMLDivElement>(null);
   const gameState = useGameState(gameId);
   const uiState = useUIState();
-  const [generatedTiles, setGeneratedTiles] = React.useState<Array<{tile: MapTile, description: string}>>([]);
+  const [generatedTiles, setGeneratedTiles] = useState<Array<{tile: MapTile, description: string}>>([]);
   const [scenarioInfo, setScenarioInfo] = useState<GameScenario | null>(scenario || null);
+  const [initialGenerationComplete, setInitialGenerationComplete] = useState(false);
+  const [customObjectCount, setCustomObjectCount] = useState(0);
 
   const {
     gameRef,
@@ -80,12 +84,12 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
 
   const { isUIActive } = uiState;
 
-  // Auto-save functionality
+  // Auto-save functionality with improved settings
   const autoSaveState = useAutoSave({
     enabled: true,
-    interval: 30000, // 30 seconds
+    interval: 60000, // 60 seconds (increased to avoid too-frequent saves)
     onSave: handleSaveGame,
-    gameLoaded: isLoaded && !isLoadingGame
+    gameLoaded: isLoaded && !isLoadingGame && initialGenerationComplete
   });
 
   // Update input manager about UI state
@@ -105,6 +109,14 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     document.addEventListener('pointerlockchange', handlePointerLockChange);
     return () => document.removeEventListener('pointerlockchange', handlePointerLockChange);
   }, [setIsPointerLocked]);
+
+  // Force complete loading after initial generation
+  useEffect(() => {
+    if (isLoaded && !initialGenerationComplete && generatedTiles.length > 0) {
+      console.log('✅ Marking generation complete - tiles generated:', generatedTiles.length);
+      setInitialGenerationComplete(true);
+    }
+  }, [generatedTiles, isLoaded, initialGenerationComplete]);
 
   // Load game data first (if gameId provided)
   useEffect(() => {
@@ -150,6 +162,27 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       GameInitializer.cleanup(gameRef.current);
     };
   }, [isLoadingGame, gameData, mountRef.current, scenario]);
+
+  // Update custom objects count when object definition system changes
+  useEffect(() => {
+    if (gameRef.current.objectDefinitionSystem) {
+      try {
+        let count = 0;
+        const categories = ['enemy', 'item', 'weapon', 'tool', 'vegetation', 'structure'];
+        
+        for (const category of categories) {
+          const objects = gameRef.current.objectDefinitionSystem.getObjectsByCategory(category);
+          if (objects) {
+            count += objects.size;
+          }
+        }
+        
+        setCustomObjectCount(count);
+      } catch (error) {
+        console.error('Error counting custom objects:', error);
+      }
+    }
+  }, [isLoaded, initialGenerationComplete]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -306,26 +339,6 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     });
 
     console.log("Ground plane registered with top surface at y=0");
-
-    // Add a visible ground plane for debugging, but only if scene exists
-    if (gameRef.current && gameRef.current.scene) {
-      const groundMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(100, 100),
-        new THREE.MeshBasicMaterial({
-          color: 0x444444,
-          wireframe: true,
-          opacity: 0.5,
-          transparent: true
-        })
-      );
-      groundMesh.rotation.x = -Math.PI / 2; // Rotate to be horizontal
-      groundMesh.position.y = 0.01; // Slightly above ground level
-      gameRef.current.scene.add(groundMesh);
-
-      console.log("Debug ground mesh added at y=0.01");
-    } else {
-      console.log("Scene not available yet, skipping debug ground mesh");
-    }
   };
 
   const initializeGameWithScenario = () => {
@@ -392,47 +405,76 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   };
 
   async function handleSaveGame(): Promise<boolean> {
+    console.log('💾 Starting game save process...');
+    
     const game = gameRef.current;
-    if (!game.character || !game.mapManager || !game.saveSystem) return false;
+    if (!game.character || !game.mapManager || !game.saveSystem) {
+      console.error('❌ Cannot save game - required game components are missing');
+      return false;
+    }
 
-    const playerPosition = game.character.getPosition();
-    const playerRotation = game.character.getRotation();
-    const mapTiles = game.mapManager.getLoadedTiles();
-    const healthState = game.character.getHealthSystem().getHealth();
-    const experienceSystem = game.character.getExperienceSystem();
-    const inventorySystem = game.character.getInventorySystem();
-    const equipmentManager = game.character.getEquipmentManager();
+    try {
+      const playerPosition = game.character.getPosition();
+      const playerRotation = game.character.getRotation();
+      
+      // Get ALL map tiles, including those in the AIMapGenerator cache
+      const mapTiles = game.mapManager.getAllTiles();
+      console.log(`🗺️ Saving ${mapTiles.size} map tiles to database`);
+      
+      const healthState = game.character.getHealthSystem().getHealth();
+      const experienceSystem = game.character.getExperienceSystem();
+      const inventorySystem = game.character.getInventorySystem();
+      const equipmentManager = game.character.getEquipmentManager();
 
-    // Get skills data
-    const skillsMap = new Map();
-    experienceSystem.getAllSkills().forEach(skill => {
-      skillsMap.set(skill.id, skill);
-    });
+      // Get skills data
+      const skillsMap = new Map();
+      experienceSystem.getAllSkills().forEach(skill => {
+        skillsMap.set(skill.id, skill);
+      });
 
-    // Get inventory data
-    const inventory = inventorySystem.getInventory();
+      // Get inventory data
+      const inventory = inventorySystem.getInventory();
 
-    // Get equipment data
-    const equippedTool = equipmentManager.getEquippedTool();
-    const equippedWeapon = equipmentManager.getEquippedWeapon();
-    const availableTools = equipmentManager.getAvailableTools();
-    const availableWeapons = equipmentManager.getAvailableWeapons();
+      // Get equipment data
+      const equippedTool = equipmentManager.getEquippedTool();
+      const equippedWeapon = equipmentManager.getEquippedWeapon();
+      const availableTools = equipmentManager.getAvailableTools();
+      const availableWeapons = equipmentManager.getAvailableWeapons();
 
-    return await game.saveSystem.saveGame(
-      playerPosition,
-      playerRotation,
-      currentBiome,
-      mapTiles,
-      npcStates,
-      characterCustomization,
-      healthState,
-      skillsMap,
-      inventory,
-      equippedTool,
-      equippedWeapon,
-      availableTools,
-      availableWeapons
-    );
+      // Include scenario data in save if available
+      let scenarioData = null;
+      if (scenarioInfo) {
+        scenarioData = {
+          id: scenarioInfo.id,
+          name: scenarioInfo.name,
+          prompt: scenarioInfo.prompt,
+          theme: scenarioInfo.theme
+        };
+      }
+
+      const success = await game.saveSystem.saveGame(
+        playerPosition,
+        playerRotation,
+        currentBiome,
+        mapTiles,
+        npcStates,
+        characterCustomization,
+        healthState,
+        skillsMap,
+        inventory,
+        equippedTool,
+        equippedWeapon,
+        availableTools,
+        availableWeapons,
+        scenarioData
+      );
+
+      console.log('💾 Save operation completed with result:', success);
+      return success;
+    } catch (error) {
+      console.error('❌ Error during save operation:', error);
+      return false;
+    }
   }
 
   const handleRetryLoad = () => {
@@ -456,6 +498,27 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     console.log(`📦 Object interaction completed: ${actionId}`);
   };
 
+  const handleObjectManagerChanges = (changes: any) => {
+    console.log('🔄 Applying custom object changes:', changes);
+    // Implement the changes to the object system
+    // This would need integration with your object systems
+    
+    // Refresh object counts
+    if (gameRef.current.objectDefinitionSystem) {
+      let count = 0;
+      const categories = ['enemy', 'item', 'weapon', 'tool', 'vegetation', 'structure'];
+      
+      for (const category of categories) {
+        const objects = gameRef.current.objectDefinitionSystem.getObjectsByCategory(category);
+        if (objects) {
+          count += objects.size;
+        }
+      }
+      
+      setCustomObjectCount(count);
+    }
+  };
+
   // Get nearby enemies for display
   const nearbyEnemies = gameRef.current.enemyManager ? 
     gameRef.current.enemyManager.getEnemiesInRange(
@@ -471,7 +534,9 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     loadingError: !!loadingError,
     loadingStep,
     isUIActive,
-    isPointerLocked
+    isPointerLocked,
+    initialGenerationComplete,
+    generatedTilesCount: generatedTiles.length
   });
 
   if (isLoadingGame) {
@@ -489,6 +554,12 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-sky-200 to-sky-400">
       <div ref={mountRef} className="w-full h-full" />
+      
+      {/* Custom Objects Button */}
+      <CustomObjectsButton 
+        onClick={() => uiState.setShowObjectManager(true)} 
+        objectCount={customObjectCount}
+      />
       
       {/* Notification Display */}
       <NotificationDisplay />
@@ -710,7 +781,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
 
       {/* API Key Notice */}
       {!import.meta.env.VITE_OPENAI_API_KEY && !isUIActive && (
-        <div className="absolute bottom-4 left-4 bg-yellow-900 bg-opacity-90 text-yellow-100 p-3 rounded-lg backdrop-blur-sm max-w-md">
+        <div className="absolute bottom-20 left-4 bg-yellow-900 bg-opacity-90 text-yellow-100 p-3 rounded-lg backdrop-blur-sm max-w-md">
           <div className="flex items-start gap-2">
             <Zap className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div className="text-xs">
@@ -781,6 +852,14 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       <GameSettingsUI
         isVisible={uiState.showSettings}
         onClose={() => uiState.setShowSettings(false)}
+      />
+      
+      <ObjectManagerUI
+        isVisible={uiState.showObjectManager}
+        onClose={() => uiState.setShowObjectManager(false)}
+        objectDefinitionSystem={gameRef.current.objectDefinitionSystem}
+        customObjectGenerator={gameRef.current.customObjectGenerator}
+        onApplyChanges={handleObjectManagerChanges}
       />
     </div>
   );

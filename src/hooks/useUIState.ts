@@ -12,6 +12,7 @@ export const useUIState = () => {
   const [showKeybindings, setShowKeybindings] = useState(false);
   const [showExperience, setShowExperience] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showObjectManager, setShowObjectManager] = useState(false);
 
   const isUIActive = activeConversation !== null || 
                     activeObjectInteraction !== null || 
@@ -21,7 +22,8 @@ export const useUIState = () => {
                     showCharacterCustomizer || 
                     showKeybindings ||
                     showExperience ||
-                    showSettings;
+                    showSettings ||
+                    showObjectManager;
 
   const closeAllUI = () => {
     setActiveConversation(null);
@@ -33,6 +35,7 @@ export const useUIState = () => {
     setShowKeybindings(false);
     setShowExperience(false);
     setShowSettings(false);
+    setShowObjectManager(false);
   };
 
   return {
@@ -54,6 +57,8 @@ export const useUIState = () => {
     setShowExperience,
     showSettings,
     setShowSettings,
+    showObjectManager,
+    setShowObjectManager,
     isUIActive,
     closeAllUI,
   };

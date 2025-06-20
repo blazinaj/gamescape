@@ -45,6 +45,7 @@ export class GameInitializer {
       // Initialize game components
       console.log('🔧 Creating GameRenderer...');
       gameRef.renderer = new GameRenderer();
+      gameRef.scene = gameRef.renderer.scene;
       
       console.log('🔧 Creating Character...');
       gameRef.character = new Character(characterCustomization);
@@ -71,6 +72,10 @@ export class GameInitializer {
 
       console.log('🔧 Creating EnemyManager...');
       gameRef.enemyManager = new EnemyManager(gameRef.renderer.scene, gameRef.character.getInventorySystem());
+
+      // Store the object systems in the game ref for UI access
+      gameRef.customObjectGenerator = this.customObjectGenerator;
+      gameRef.objectDefinitionSystem = this.objectDefinitionSystem;
 
       // Critical null check for enemy manager
       if (!gameRef.enemyManager) {
@@ -344,6 +349,7 @@ export class GameInitializer {
       // Initialize game components
       console.log('🔧 Creating GameRenderer...');
       gameRef.renderer = new GameRenderer();
+      gameRef.scene = gameRef.renderer.scene;
       
       console.log('🔧 Creating Character...');
       gameRef.character = new Character(characterCustomization);
@@ -370,6 +376,10 @@ export class GameInitializer {
 
       console.log('🔧 Creating EnemyManager...');
       gameRef.enemyManager = new EnemyManager(gameRef.renderer.scene, gameRef.character.getInventorySystem());
+
+      // Store the object systems in the game ref for UI access
+      gameRef.customObjectGenerator = this.customObjectGenerator;
+      gameRef.objectDefinitionSystem = this.objectDefinitionSystem;
 
       // Critical null check for enemy manager
       if (!gameRef.enemyManager) {
@@ -618,7 +628,7 @@ export class GameInitializer {
       console.log('✅ Custom objects initialized for scenario:', scenarioId);
       
       // Initialize enemy system with custom enemies - with null check
-      if (gameRef.enemyManager && objectSet.objects.enemy && objectSet.objects.enemy.length > 0) {
+      if (gameRef.enemyManager && objectSet.objects.enemy && Array.isArray(objectSet.objects.enemy)) {
         console.log('🐺 Registering custom enemies:', objectSet.objects.enemy.length);
         gameRef.enemyManager.registerCustomEnemies(objectSet.objects.enemy);
       } else if (!gameRef.enemyManager) {
@@ -626,7 +636,7 @@ export class GameInitializer {
       }
       
       // Initialize item system with custom items - with null check
-      if (gameRef.character && objectSet.objects.item && objectSet.objects.item.length > 0) {
+      if (gameRef.character && objectSet.objects.item && Array.isArray(objectSet.objects.item)) {
         console.log('🎁 Registering custom items:', objectSet.objects.item.length);
         gameRef.character.getInventorySystem().registerCustomItems(objectSet.objects.item);
       } else if (!gameRef.character) {
@@ -637,12 +647,12 @@ export class GameInitializer {
       if (gameRef.character) {
         const equipmentManager = gameRef.character.getEquipmentManager();
         
-        if (objectSet.objects.weapon && objectSet.objects.weapon.length > 0) {
+        if (objectSet.objects.weapon && Array.isArray(objectSet.objects.weapon)) {
           console.log('⚔️ Registering custom weapons:', objectSet.objects.weapon.length);
           equipmentManager.registerCustomWeapons(objectSet.objects.weapon);
         }
         
-        if (objectSet.objects.tool && objectSet.objects.tool.length > 0) {
+        if (objectSet.objects.tool && Array.isArray(objectSet.objects.tool)) {
           console.log('🔨 Registering custom tools:', objectSet.objects.tool.length);
           equipmentManager.registerCustomTools(objectSet.objects.tool);
         }
@@ -651,7 +661,7 @@ export class GameInitializer {
       }
       
       // Register custom vegetation with map manager - with null check
-      if (gameRef.mapManager && objectSet.objects.vegetation && objectSet.objects.vegetation.length > 0) {
+      if (gameRef.mapManager && objectSet.objects.vegetation && Array.isArray(objectSet.objects.vegetation)) {
         console.log('🌳 Registering custom vegetation:', objectSet.objects.vegetation.length);
         gameRef.mapManager.registerCustomVegetation(objectSet.objects.vegetation);
       } else if (!gameRef.mapManager) {
@@ -659,7 +669,7 @@ export class GameInitializer {
       }
       
       // Register custom structures with map manager - with null check
-      if (gameRef.mapManager && objectSet.objects.structure && objectSet.objects.structure.length > 0) {
+      if (gameRef.mapManager && objectSet.objects.structure && Array.isArray(objectSet.objects.structure)) {
         console.log('🏛️ Registering custom structures:', objectSet.objects.structure.length);
         gameRef.mapManager.registerCustomStructures(objectSet.objects.structure);
       } else if (!gameRef.mapManager) {
@@ -848,6 +858,7 @@ export class GameInitializer {
 
     // Reset game ref
     gameRef.renderer = null;
+    gameRef.scene = null;
     gameRef.character = null;
     gameRef.inputManager = null;
     gameRef.cameraController = null;
@@ -856,5 +867,7 @@ export class GameInitializer {
     gameRef.saveSystem = null;
     gameRef.enemyManager = null;
     gameRef.animationId = null;
+    gameRef.customObjectGenerator = null;
+    gameRef.objectDefinitionSystem = null;
   }
 }
