@@ -10,3 +10,6 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[build.environment]
+  NETLIFY_SITE_ID = "63911bcb-ccd9-463b-aad0-57591e20376c"
