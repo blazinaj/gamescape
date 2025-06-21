@@ -23,6 +23,7 @@ export class CharacterPreviewRenderer {
     leftLeg?: THREE.Mesh;
     rightLeg?: THREE.Mesh;
   } = {};
+  private textures: Map<string, THREE.Texture> = new Map();
 
   constructor(container: HTMLElement, width: number, height: number) {
     // Create scene
@@ -43,6 +44,9 @@ export class CharacterPreviewRenderer {
 
     container.appendChild(this.renderer.domElement);
 
+    // Preload textures
+    this.preloadTextures();
+
     // Add lighting
     this.addLighting();
 
@@ -52,6 +56,35 @@ export class CharacterPreviewRenderer {
 
     // Start animation loop
     this.animate();
+  }
+
+  private preloadTextures(): void {
+    // Create and store reusable textures
+    const textureLoader = new THREE.TextureLoader();
+
+    // Common textures for character
+    const textureUrls = {
+      'skin': 'https://images.pexels.com/photos/15286/pexels-photo.jpg?auto=compress&cs=tinysrgb&w=512&h=512&dpr=1',
+      'cloth': 'https://images.pexels.com/photos/1092364/pexels-photo-1092364.jpeg?auto=compress&cs=tinysrgb&w=512&h=512&dpr=1',
+      'leather': 'https://images.pexels.com/photos/276092/pexels-photo-276092.jpeg?auto=compress&cs=tinysrgb&w=512&h=512&dpr=1',
+    };
+
+    // Load each texture
+    for (const [key, url] of Object.entries(textureUrls)) {
+      try {
+        const texture = textureLoader.load(url);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(1, 1);
+        this.textures.set(key, texture);
+      } catch (error) {
+        console.error(`Failed to load texture ${key} from ${url}:`, error);
+      }
+    }
+  }
+
+  private getTexture(name: string): THREE.Texture | null {
+    return this.textures.get(name) || null;
   }
 
   private addLighting(): void {
@@ -94,81 +127,335 @@ export class CharacterPreviewRenderer {
   }
 
   private createCharacterMesh(customization: CharacterCustomization): void {
-    // Main body
-    const bodyGeometry = new THREE.CapsuleGeometry(0.3 * customization.bodyWidth, 1.2, 4, 8);
-    const bodyMaterial = new THREE.MeshLambertMaterial({ 
-      color: parseInt(customization.clothingColor.replace('#', ''), 16) 
+    // Get textures
+    const skinTexture = this.getTexture('skin');
+    const clothTexture = this.getTexture('cloth');
+
+    // Main body (improved with better geometry)
+    const bodyGeometry = new THREE.CapsuleGeometry(0.3 * customization.bodyWidth, 1.2, 8, 12);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+      color: parseInt(customization.clothingColor.replace('#', ''), 16),
+      roughness: 0.7,
+      metalness: 0.1
     });
+    
+    if (clothTexture) {
+      bodyMaterial.map = clothTexture;
+      bodyMaterial.map.repeat.set(1, 2);
+    }
+    
     this.characterParts.body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     this.characterParts.body.position.y = 1;
     this.characterParts.body.castShadow = true;
+    this.characterParts.body.receiveShadow = true;
     this.character.add(this.characterParts.body);
 
-    // Head
-    const headGeometry = new THREE.SphereGeometry(0.25 * customization.headScale, 8, 6);
-    const headMaterial = new THREE.MeshLambertMaterial({ 
-      color: parseInt(customization.bodyColor.replace('#', ''), 16) 
+    // Improved head with better geometry and facial features
+    const headGeometry = new THREE.SphereGeometry(0.25 * customization.headScale, 16, 12);
+    const headMaterial = new THREE.MeshStandardMaterial({ 
+      color: parseInt(customization.bodyColor.replace('#', ''), 16),
+      roughness: 0.5,
+      metalness: 0.1
     });
+    
+    if (skinTexture) {
+      headMaterial.map = skinTexture;
+    }
+    
     this.characterParts.head = new THREE.Mesh(headGeometry, headMaterial);
     this.characterParts.head.position.y = 2;
     this.characterParts.head.castShadow = true;
     this.character.add(this.characterParts.head);
 
-    // Eyes
-    const eyeGeometry = new THREE.SphereGeometry(0.05 * customization.headScale, 6, 4);
+    // More detailed eyes with pupils
+    const eyeGeometry = new THREE.SphereGeometry(0.05 * customization.headScale, 12, 10);
     const eyeMaterial = new THREE.MeshLambertMaterial({ 
       color: parseInt(customization.eyeColor.replace('#', ''), 16) 
     });
     
-    this.characterParts.leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    this.characterParts.leftEye.position.set(-0.1 * customization.headScale, 2.1, 0.2 * customization.headScale);
-    this.character.add(this.characterParts.leftEye);
+    // Add pupil detail
+    const pupilGeometry = new THREE.SphereGeometry(0.025 * customization.headScale, 8, 8);
+    const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
     
+    // Left eye with pupil
+    const leftEyeGroup = new THREE.Group();
+    this.characterParts.leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEyeGroup.add(this.characterParts.leftEye);
+    
+    const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+    leftPupil.position.z = 0.03 * customization.headScale;
+    leftEyeGroup.add(leftPupil);
+    
+    leftEyeGroup.position.set(
+      -0.1 * customization.headScale, 
+      2.05, 
+      0.2 * customization.headScale
+    );
+    this.character.add(leftEyeGroup);
+    
+    // Right eye with pupil
+    const rightEyeGroup = new THREE.Group();
     this.characterParts.rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    this.characterParts.rightEye.position.set(0.1 * customization.headScale, 2.1, 0.2 * customization.headScale);
-    this.character.add(this.characterParts.rightEye);
+    rightEyeGroup.add(this.characterParts.rightEye);
+    
+    const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+    rightPupil.position.z = 0.03 * customization.headScale;
+    rightEyeGroup.add(rightPupil);
+    
+    rightEyeGroup.position.set(
+      0.1 * customization.headScale, 
+      2.05, 
+      0.2 * customization.headScale
+    );
+    this.character.add(rightEyeGroup);
 
-    // Arms
-    const armGeometry = new THREE.CapsuleGeometry(0.1, 0.8 * customization.armLength, 4, 8);
-    const armMaterial = new THREE.MeshLambertMaterial({ 
+    // Add more facial features
+    
+    // Nose
+    const noseGeometry = new THREE.ConeGeometry(0.04 * customization.headScale, 0.08 * customization.headScale, 4);
+    const noseMaterial = new THREE.MeshLambertMaterial({ 
       color: parseInt(customization.bodyColor.replace('#', ''), 16) 
     });
+    const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+    nose.position.set(
+      0, 
+      2.0, 
+      0.25 * customization.headScale
+    );
+    nose.rotation.x = -Math.PI / 2; // Point outward
+    this.character.add(nose);
     
+    // Mouth - simple smile
+    const smileGeometry = new THREE.TorusGeometry(0.08 * customization.headScale, 0.01 * customization.headScale, 8, 12, Math.PI * 0.5);
+    const smileMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const smile = new THREE.Mesh(smileGeometry, smileMaterial);
+    smile.position.set(
+      0, 
+      1.9, 
+      0.22 * customization.headScale
+    );
+    smile.rotation.x = -Math.PI / 10; // Slight angle
+    this.character.add(smile);
+    
+    // Ears
+    const earGeometry = new THREE.SphereGeometry(0.06 * customization.headScale, 8, 6);
+    // Modify ear geometry to be more ear-shaped
+    if (earGeometry.attributes.position) {
+      const positions = earGeometry.attributes.position;
+      
+      for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const y = positions.getY(i);
+        const z = positions.getZ(i);
+        
+        // Flatten and elongate ears
+        positions.setXYZ(
+          i,
+          x * 0.6,
+          y * 1.2,
+          z
+        );
+      }
+      
+      earGeometry.computeVertexNormals();
+    }
+    
+    const earMaterial = new THREE.MeshLambertMaterial({ 
+      color: parseInt(customization.bodyColor.replace('#', ''), 16)
+    });
+    
+    // Left ear
+    const leftEar = new THREE.Mesh(earGeometry, earMaterial);
+    leftEar.position.set(
+      -0.25 * customization.headScale, 
+      2.05, 
+      0
+    );
+    this.character.add(leftEar);
+    
+    // Right ear
+    const rightEar = new THREE.Mesh(earGeometry, earMaterial);
+    rightEar.position.set(
+      0.25 * customization.headScale, 
+      2.05, 
+      0
+    );
+    this.character.add(rightEar);
+
+    // Hair - simple representation
+    if (Math.random() > 0.3) { // 70% chance to have visible hair
+      const hairColor = 0x000000 + Math.floor(Math.random() * 0x8B4513);
+      const hairGeometry = new THREE.SphereGeometry(0.27 * customization.headScale, 16, 12);
+      // Modify to create a hair shape
+      if (hairGeometry.attributes.position) {
+        const positions = hairGeometry.attributes.position;
+        
+        for (let i = 0; i < positions.count; i++) {
+          const y = positions.getY(i);
+          
+          // Only keep top portion of sphere
+          if (y < -0.05) {
+            positions.setY(i, -0.05);
+          }
+        }
+        
+        hairGeometry.computeVertexNormals();
+      }
+      
+      const hairMaterial = new THREE.MeshLambertMaterial({ color: hairColor });
+      const hair = new THREE.Mesh(hairGeometry, hairMaterial);
+      hair.position.set(0, 2.1, 0);
+      this.character.add(hair);
+    }
+
+    // Arms (improved)
+    const armGeometry = new THREE.CapsuleGeometry(0.1, 0.8 * customization.armLength, 8, 10);
+    const armMaterial = new THREE.MeshStandardMaterial({ 
+      color: parseInt(customization.bodyColor.replace('#', ''), 16),
+      roughness: 0.6,
+      metalness: 0.1
+    });
+    
+    if (skinTexture) {
+      armMaterial.map = skinTexture;
+    }
+    
+    // Left arm
     this.characterParts.leftArm = new THREE.Mesh(armGeometry, armMaterial);
-    this.characterParts.leftArm.position.set(-0.45 * customization.bodyWidth, 1.2, 0);
-    this.characterParts.leftArm.rotation.set(0, 0, 0.1);
+    this.characterParts.leftArm.position.set(
+      -0.45 * customization.bodyWidth, 
+      1.6, 
+      0
+    );
     this.characterParts.leftArm.castShadow = true;
     this.character.add(this.characterParts.leftArm);
     
+    // Right arm
     this.characterParts.rightArm = new THREE.Mesh(armGeometry, armMaterial);
-    this.characterParts.rightArm.position.set(0.45 * customization.bodyWidth, 1.2, 0);
-    this.characterParts.rightArm.rotation.set(0, 0, -0.1);
+    this.characterParts.rightArm.position.set(
+      0.45 * customization.bodyWidth, 
+      1.6, 
+      0
+    );
     this.characterParts.rightArm.castShadow = true;
     this.character.add(this.characterParts.rightArm);
 
-    // Legs
-    const legGeometry = new THREE.CapsuleGeometry(0.12, 0.8 * customization.legLength, 4, 8);
-    const legMaterial = new THREE.MeshLambertMaterial({ 
-      color: parseInt(customization.clothingColor.replace('#', ''), 16) 
+    // Add hand details
+    const handGeometry = new THREE.SphereGeometry(0.08, 8, 6);
+    
+    // Left hand
+    const leftHand = new THREE.Mesh(handGeometry, armMaterial);
+    leftHand.position.set(
+      -0.45 * customization.bodyWidth,
+      1.6 - 0.8 * customization.armLength,
+      0
+    );
+    this.character.add(leftHand);
+    
+    // Right hand
+    const rightHand = new THREE.Mesh(handGeometry, armMaterial);
+    rightHand.position.set(
+      0.45 * customization.bodyWidth,
+      1.6 - 0.8 * customization.armLength,
+      0
+    );
+    this.character.add(rightHand);
+
+    // Legs (improved)
+    const legGeometry = new THREE.CapsuleGeometry(0.12, 0.8 * customization.legLength, 8, 10);
+    const legMaterial = new THREE.MeshStandardMaterial({ 
+      color: parseInt(customization.clothingColor.replace('#', ''), 16),
+      roughness: 0.7,
+      metalness: 0.0
     });
     
+    if (clothTexture) {
+      legMaterial.map = clothTexture;
+      legMaterial.map.repeat.set(1, 1);
+    }
+    
+    // Left leg
     this.characterParts.leftLeg = new THREE.Mesh(legGeometry, legMaterial);
-    this.characterParts.leftLeg.position.set(-0.15 * customization.bodyWidth, 0.4 * customization.legLength, 0);
+    this.characterParts.leftLeg.position.set(
+      -0.18 * customization.bodyWidth, 
+      0.4 * customization.legLength, 
+      0
+    );
     this.characterParts.leftLeg.castShadow = true;
     this.character.add(this.characterParts.leftLeg);
     
+    // Right leg
     this.characterParts.rightLeg = new THREE.Mesh(legGeometry, legMaterial);
-    this.characterParts.rightLeg.position.set(0.15 * customization.bodyWidth, 0.4 * customization.legLength, 0);
+    this.characterParts.rightLeg.position.set(
+      0.18 * customization.bodyWidth, 
+      0.4 * customization.legLength, 
+      0
+    );
     this.characterParts.rightLeg.castShadow = true;
     this.character.add(this.characterParts.rightLeg);
 
-    // Add simple smile
-    const smileGeometry = new THREE.TorusGeometry(0.06 * customization.headScale, 0.01 * customization.headScale, 4, 8, Math.PI);
-    const smileMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
-    const smile = new THREE.Mesh(smileGeometry, smileMaterial);
-    smile.position.set(0, 1.95, 0.18 * customization.headScale);
-    smile.rotation.z = Math.PI;
-    this.character.add(smile);
+    // Add foot details
+    const footGeometry = new THREE.BoxGeometry(0.14, 0.05, 0.2);
+    
+    // Left foot
+    const leftFoot = new THREE.Mesh(footGeometry, legMaterial);
+    leftFoot.position.set(
+      -0.18 * customization.bodyWidth,
+      0.025,
+      0.04
+    );
+    this.character.add(leftFoot);
+    
+    // Right foot
+    const rightFoot = new THREE.Mesh(footGeometry, legMaterial);
+    rightFoot.position.set(
+      0.18 * customization.bodyWidth,
+      0.025,
+      0.04
+    );
+    this.character.add(rightFoot);
+
+    // Add clothing details
+    
+    // Belt
+    const beltGeometry = new THREE.CylinderGeometry(
+      0.31 * customization.bodyWidth,
+      0.31 * customization.bodyWidth,
+      0.1,
+      16
+    );
+    const beltMaterial = new THREE.MeshLambertMaterial({ color: 0x4A3728 });
+    const belt = new THREE.Mesh(beltGeometry, beltMaterial);
+    belt.position.y = 0.8;
+    this.character.add(belt);
+    
+    // Belt buckle
+    const buckleGeometry = new THREE.BoxGeometry(0.1, 0.07, 0.04);
+    const buckleMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xDAA520,
+      roughness: 0.2,
+      metalness: 0.8
+    });
+    const buckle = new THREE.Mesh(buckleGeometry, buckleMaterial);
+    buckle.position.set(0, 0.8, 0.32 * customization.bodyWidth);
+    this.character.add(buckle);
+    
+    // Neck collar detail
+    const collarGeometry = new THREE.TorusGeometry(
+      0.13 * customization.bodyWidth,
+      0.03,
+      8,
+      16,
+      Math.PI
+    );
+    const collarMaterial = new THREE.MeshLambertMaterial({ 
+      color: parseInt(customization.clothingColor.replace('#', ''), 16)
+    });
+    const collar = new THREE.Mesh(collarGeometry, collarMaterial);
+    collar.position.set(0, 1.55, 0.02);
+    collar.rotation.x = Math.PI / 2;
+    collar.rotation.z = Math.PI;
+    this.character.add(collar);
 
     // Apply overall scale
     this.character.scale.setScalar(customization.scale);
@@ -190,16 +477,33 @@ export class CharacterPreviewRenderer {
   private animate = (): void => {
     this.animationId = requestAnimationFrame(this.animate);
 
-    // Gentle idle animation
+    // Enhanced idle animation with more natural movement
     const time = Date.now() * 0.002;
     
-    // Gentle bobbing
-    this.character.position.y = Math.sin(time) * 0.02;
+    // Primary bobbing movement
+    this.character.position.y = Math.sin(time * 0.5) * 0.03;
     
-    // Slight arm sway
+    // Gentle head movement
+    if (this.characterParts.head) {
+      this.characterParts.head.rotation.y = Math.sin(time * 0.3) * 0.1;
+      this.characterParts.head.rotation.x = Math.sin(time * 0.5) * 0.05;
+    }
+    
+    // Subtle arm swaying
     if (this.characterParts.leftArm && this.characterParts.rightArm) {
-      this.characterParts.leftArm.rotation.z = 0.1 + Math.sin(time * 0.7) * 0.05;
-      this.characterParts.rightArm.rotation.z = -0.1 - Math.sin(time * 0.7) * 0.05;
+      // Enhanced arm movements that look more natural
+      this.characterParts.leftArm.rotation.x = Math.sin(time * 0.7) * 0.1;
+      this.characterParts.rightArm.rotation.x = -Math.sin(time * 0.7) * 0.1;
+      
+      this.characterParts.leftArm.rotation.z = Math.cos(time * 0.5) * 0.05 + 0.1;
+      this.characterParts.rightArm.rotation.z = -Math.cos(time * 0.5) * 0.05 - 0.1;
+    }
+    
+    // Subtle leg movements
+    if (this.characterParts.leftLeg && this.characterParts.rightLeg) {
+      // Very subtle leg movement while idle
+      this.characterParts.leftLeg.rotation.x = Math.sin(time * 0.3) * 0.03;
+      this.characterParts.rightLeg.rotation.x = -Math.sin(time * 0.3) * 0.03;
     }
 
     // Slow rotation around the character
@@ -231,6 +535,11 @@ export class CharacterPreviewRenderer {
           object.material.dispose();
         }
       }
+    });
+    
+    // Dispose of textures
+    this.textures.forEach(texture => {
+      texture.dispose();
     });
     
     this.renderer.dispose();
