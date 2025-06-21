@@ -5,7 +5,7 @@ import { InteractableObjectManager } from '../services/InteractableObjectManager
 import { CharacterCustomization, DEFAULT_CUSTOMIZATION } from '../types/CharacterTypes';
 import { DamageInfo } from '../types/HealthTypes';
 
-// Import the new modular components
+// Import the modular components
 import { CharacterMesh } from './character/CharacterMesh';
 import { CharacterEquipment } from './character/CharacterEquipment';
 import { CharacterAnimations } from './character/CharacterAnimations';
@@ -50,6 +50,7 @@ export class Character {
   // Input tracking
   private lastLeftClickState: boolean = false;
   private lastRightClickState: boolean = false;
+  private lastFrameTime: number = Date.now();
 
   constructor(customization?: CharacterCustomization) {
     this.velocity = new THREE.Vector3();
@@ -87,7 +88,7 @@ export class Character {
     // Initialize combat with required systems
     this.characterCombat = new CharacterCombat(
       this.interactableObjectManager,
-      this.characterStats.getExperienceSystem(), // Now this.characterStats is defined
+      this.characterStats.getExperienceSystem(),
       this.equipmentManager
     );
 
@@ -100,12 +101,13 @@ export class Character {
     // Set initial position for stats tracking - use y=0
     this.characterStats.setLastPosition(this.characterMesh.mesh.position);
 
-    // Don't add any y offset - keep feet at ground level
-
     // Add some test items to inventory for demonstration
     setTimeout(() => {
       this.inventorySystem.addTestItems();
     }, 1000);
+    
+    // Initialize last frame time
+    this.lastFrameTime = Date.now();
   }
 
   updateCustomization(customization: CharacterCustomization): void {
@@ -141,15 +143,23 @@ export class Character {
   }
 
   update(input: InputState & { interact?: boolean }, deltaTime: number = 16): void {
+    // Track frame time for consistent animation speeds
+    const currentTime = Date.now();
+    const actualDeltaTime = currentTime - this.lastFrameTime;
+    this.lastFrameTime = currentTime;
+    
+    // Ensure deltaTime is reasonable (prevent huge jumps if game pauses)
+    const clampedDeltaTime = Math.min(actualDeltaTime, 100);
+    
     // Update stats and get current speeds based on skills
-    const speeds = this.characterStats.update(deltaTime, this.characterMesh.getPosition());
+    const speeds = this.characterStats.update(clampedDeltaTime, this.characterMesh.getPosition());
     this.speed = speeds.speed;
     this.runSpeed = speeds.runSpeed;
 
     const currentSpeed = input.run ? this.runSpeed : this.speed;
 
     // Apply gravity to velocity
-    this.velocity = this.characterCollision.applyGravity(this.velocity, deltaTime, this.gravity);
+    this.velocity = this.characterCollision.applyGravity(this.velocity, clampedDeltaTime, this.gravity);
 
     // Calculate movement direction based on character's current rotation
     const forward = new THREE.Vector3(0, 0, 1);
@@ -163,18 +173,20 @@ export class Character {
     this.velocity.x = 0;
     this.velocity.z = 0;
 
-    // Apply movement input
+    // Apply movement input - scale by deltaTime for consistent speed
+    const timeScale = clampedDeltaTime / 16; // Normalize to expected 16ms frame
+    
     if (input.forward) {
-      this.velocity.add(forward.multiplyScalar(currentSpeed));
+      this.velocity.add(forward.multiplyScalar(currentSpeed * timeScale));
     }
     if (input.backward) {
-      this.velocity.add(forward.multiplyScalar(-currentSpeed * 0.5));
+      this.velocity.add(forward.multiplyScalar(-currentSpeed * 0.5 * timeScale));
     }
     if (input.left) {
-      this.velocity.add(right.multiplyScalar(currentSpeed * 0.7));
+      this.velocity.add(right.multiplyScalar(currentSpeed * 0.7 * timeScale));
     }
     if (input.right) {
-      this.velocity.add(right.multiplyScalar(-currentSpeed * 0.7));
+      this.velocity.add(right.multiplyScalar(-currentSpeed * 0.7 * timeScale));
     }
 
     // Apply rotation based on mouse movement
@@ -213,7 +225,7 @@ export class Character {
     this.characterMesh.mesh.position.copy(collisionResult.position);
     this.velocity.copy(collisionResult.velocity);
 
-    // Update animations
+    // Update animations with proper time scaling
     this.characterAnimations.updateMovementAnimations(
       input,
       this.velocity,
