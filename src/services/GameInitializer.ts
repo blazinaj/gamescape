@@ -3,7 +3,7 @@ import { GameRenderer } from '../components/GameRenderer';
 import { Character } from '../components/Character';
 import { InputManager } from '../components/InputManager';
 import { CameraController } from '../components/CameraController';
-import { MapManager } from '../components/MapManager';
+import { MapManager } from '../services/MapManager';
 import { ConversationSystem } from '../services/ConversationSystem';
 import { SaveSystem, NPCState } from '../services/SaveSystem';
 import { EnemyManager } from '../services/EnemyManager';
