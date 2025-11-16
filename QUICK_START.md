@@ -38,9 +38,27 @@ npm run dev
 
 Open http://localhost:5173
 
-### 3. Create Your First Game Project
+### 3. Try the Guest Feature
 
-1. **Sign Up** - Create an account through the UI
+**Instant Access Without Signup:**
+1. Click "Get Started" on the landing page
+2. Click "Try as Guest" button
+3. Instantly logged in with a temporary account
+4. Starts with 1,000 Grind tokens
+5. Full platform access for testing
+
+**Guest Account Features:**
+- Auto-generated username (e.g., "Guest123456")
+- Pre-loaded wallet with 1,000 G
+- Full access to store and games
+- Can create save files
+- Perfect for onboarding and development testing
+
+**Note:** Guest accounts are temporary. Create a real account to save progress permanently.
+
+### 4. Create Your First Game Project
+
+1. **Sign Up** - Create an account (or use guest)
 2. **Upgrade to Developer** - Enable developer features
 3. **Create Project** - Name your game and add description
 4. **Configure** - Set game parameters and scenarios

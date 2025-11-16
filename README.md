@@ -101,6 +101,20 @@ Quick method via Supabase Dashboard:
 npm run dev
 ```
 
+## Quick Start - Guest Mode
+
+Try Gamescape instantly without signing up:
+
+1. Click "Get Started" on the landing page
+2. Click "Try as Guest" button
+3. Instantly access the platform with:
+   - Auto-generated username
+   - 1,000 Grind tokens welcome bonus
+   - Full platform features
+   - Perfect for testing and onboarding
+
+Guest accounts are temporary - create a real account to save progress permanently.
+
 ## Platform Architecture
 
 For detailed information about the platform architecture, database schema, and development workflow, see [PLATFORM_ARCHITECTURE.md](./PLATFORM_ARCHITECTURE.md).

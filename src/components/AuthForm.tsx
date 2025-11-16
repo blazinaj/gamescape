@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { User, Lock, Mail, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { profileService } from '../services/ProfileService';
+import { grindTokenService } from '../services/GrindTokenService';
+import { User, Lock, Mail, Eye, EyeOff, Loader2, AlertCircle, UserPlus } from 'lucide-react';
 
 interface AuthFormProps {
-  onAuthSuccess: () => void;
+  onSuccess: () => void;
 }
 
-export const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
+export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,6 +17,36 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const handleGuestLogin = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const timestamp = Date.now();
+      const guestEmail = `guest_${timestamp}@gamescape.temp`;
+      const guestPassword = `guest_${timestamp}_${Math.random().toString(36).slice(2)}`;
+
+      const { data, error } = await supabase.auth.signUp({
+        email: guestEmail,
+        password: guestPassword,
+      });
+
+      if (error) throw error;
+      if (!data.user) throw new Error('Failed to create guest account');
+
+      const username = `Guest${timestamp.toString().slice(-6)}`;
+      await profileService.ensureUserProfile(data.user.id, username);
+      await grindTokenService.ensureWallet(data.user.id);
+      await grindTokenService.awardGrind(data.user.id, 1000, 'Welcome bonus for new guest!');
+
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message || 'Failed to create guest account');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -22,13 +54,16 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (error) throw error;
+        if (data.user) {
+          await profileService.ensureUserProfile(data.user.id, email.split('@')[0]);
+          await grindTokenService.ensureWallet(data.user.id);
+        }
       } else {
-        // Sign up validation
         if (password !== confirmPassword) {
           throw new Error('Passwords do not match');
         }
@@ -36,14 +71,20 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
           throw new Error('Password must be at least 6 characters long');
         }
 
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
         });
         if (error) throw error;
+        if (data.user) {
+          const username = email.split('@')[0];
+          await profileService.ensureUserProfile(data.user.id, username);
+          await grindTokenService.ensureWallet(data.user.id);
+          await grindTokenService.awardGrind(data.user.id, 500, 'Welcome bonus!');
+        }
       }
 
-      onAuthSuccess();
+      onSuccess();
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
@@ -166,16 +207,46 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <p className="text-gray-400">
-            {isLogin ? "Don't have an account?" : 'Already have an account?'}
-            <button
-              onClick={switchMode}
-              className="ml-2 text-blue-400 hover:text-blue-300 font-medium transition-colors"
-            >
-              {isLogin ? 'Create one' : 'Sign in'}
-            </button>
-          </p>
+        <div className="mt-6 space-y-4">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-white border-opacity-20"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-black bg-opacity-30 text-gray-400">Or</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGuestLogin}
+            disabled={isLoading}
+            className="w-full bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Creating Guest Account...
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-5 h-5" />
+                Try as Guest
+              </>
+            )}
+          </button>
+
+          <div className="text-center">
+            <p className="text-gray-400">
+              {isLogin ? "Don't have an account?" : 'Already have an account?'}
+              <button
+                onClick={switchMode}
+                className="ml-2 text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              >
+                {isLogin ? 'Create one' : 'Sign in'}
+              </button>
+            </p>
+          </div>
         </div>
 
         {isLogin && (
