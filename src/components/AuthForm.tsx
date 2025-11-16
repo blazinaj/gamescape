@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { localAuthService } from '../services/LocalAuthService';
+import { localStorageService } from '../services/LocalStorageService';
 import { profileService } from '../services/ProfileService';
 import { grindTokenService } from '../services/GrindTokenService';
 import { User, Lock, Mail, Eye, EyeOff, Loader2, AlertCircle, UserPlus } from 'lucide-react';
@@ -26,24 +27,23 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       const guestEmail = `guest_${timestamp}@gamescape.temp`;
       const guestPassword = `guest_${timestamp}_${Math.random().toString(36).slice(2)}`;
 
-      const { data, error } = await supabase.auth.signUp({
-        email: guestEmail,
-        password: guestPassword,
-      });
+      const { user, error } = await localAuthService.signUp(guestEmail, guestPassword);
 
       if (error) throw error;
-      if (!data.user) throw new Error('Failed to create guest account');
+      if (!user) throw new Error('Failed to create guest account');
 
       const username = `Guest${timestamp.toString().slice(-6)}`;
 
-      const profile = await profileService.createUserProfile(data.user.id, username);
+      const profile = await profileService.createUserProfile(user.id, username);
       if (!profile) throw new Error('Failed to create profile');
 
-      const upgraded = await profileService.upgradeToDeveoper(data.user.id);
+      const upgraded = await profileService.upgradeToDeveoper(user.id);
       if (!upgraded) console.warn('Failed to upgrade guest to developer');
 
-      await grindTokenService.ensureWallet(data.user.id);
-      await grindTokenService.awardGrind(data.user.id, 1000, 'Welcome bonus for new guest!');
+      await grindTokenService.ensureWallet(user.id);
+      await grindTokenService.awardGrind(user.id, 1000, 'Welcome bonus for new guest!');
+
+      localStorageService.saveGuestCredentials(guestEmail, guestPassword);
 
       onSuccess();
     } catch (err: any) {
@@ -60,14 +60,11 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
 
     try {
       if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        const { user, error } = await localAuthService.signIn(email, password);
         if (error) throw error;
-        if (data.user) {
-          await profileService.ensureUserProfile(data.user.id, email.split('@')[0]);
-          await grindTokenService.ensureWallet(data.user.id);
+        if (user) {
+          await profileService.ensureUserProfile(user.id, email.split('@')[0]);
+          await grindTokenService.ensureWallet(user.id);
         }
       } else {
         if (password !== confirmPassword) {
@@ -77,16 +74,13 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
           throw new Error('Password must be at least 6 characters long');
         }
 
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
+        const { user, error } = await localAuthService.signUp(email, password);
         if (error) throw error;
-        if (data.user) {
+        if (user) {
           const username = email.split('@')[0];
-          await profileService.ensureUserProfile(data.user.id, username);
-          await grindTokenService.ensureWallet(data.user.id);
-          await grindTokenService.awardGrind(data.user.id, 500, 'Welcome bonus!');
+          await profileService.ensureUserProfile(user.id, username);
+          await grindTokenService.ensureWallet(user.id);
+          await grindTokenService.awardGrind(user.id, 500, 'Welcome bonus!');
         }
       }
 

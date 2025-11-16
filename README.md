@@ -43,24 +43,24 @@ Gamescape operates in three integrated modes:
 ### Engine Features
 - **AI-Powered Generation** - Dynamic world creation using OpenAI GPT-4
 - **3D Rendering** - Real-time graphics with Three.js
-- **Auto-Save System** - Cloud synchronization via Supabase
-- **Multi-tenancy** - Isolated game instances per developer
-- **Secure Economy** - Row-level security for all user data
+- **Local Storage** - Browser-based data persistence
+- **Instant Setup** - No database configuration required
+- **Pre-loaded Content** - 5 sample games ready to play
 
 ## Technology Stack
 
 - **Frontend**: React 18 with TypeScript
 - **3D Rendering**: Three.js
 - **Styling**: Tailwind CSS
-- **Backend**: Supabase (PostgreSQL, Authentication, Real-time)
-- **AI Integration**: OpenAI GPT-4 for content generation
+- **Data Storage**: Browser localStorage (no backend required)
+- **AI Integration**: OpenAI GPT-4 for content generation (optional)
 - **Build Tool**: Vite
 - **Icons**: Lucide React
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn package manager
 
 ### Installation
@@ -76,45 +76,35 @@ cd gamescape
 npm install
 ```
 
-3. Environment Setup
-```bash
-cp .env.example .env
-```
-
-4. Configure environment variables in `.env`:
-```
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_OPENAI_API_KEY=your_openai_api_key
-```
-
-5. Apply database migrations
-
-See [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for detailed instructions on setting up the database schema.
-
-Quick method via Supabase Dashboard:
-- Open SQL Editor
-- Run the migration file: `supabase/migrations/20251116000000_platform_architecture.sql`
-
-6. Start development server
+3. Start the development server
 ```bash
 npm run dev
 ```
 
-## Quick Start - Guest Mode
+4. Open your browser
+- Navigate to `http://localhost:5173`
+- Click "Try as Guest"
+- Start playing immediately!
 
-Try Gamescape instantly without signing up:
+### That's It!
+No database setup, no migrations, no configuration. Just install and run!
 
-1. Click "Get Started" on the landing page
-2. Click "Try as Guest" button
-3. Instantly access the platform with:
-   - Auto-generated username
-   - **Developer role** - Full developer portal access
-   - 1,000 Grind tokens welcome bonus
-   - Can create and publish games immediately
-   - Perfect for testing and onboarding
+## What You Get
 
-Guest accounts are temporary - create a real account to save progress permanently.
+### 5 Pre-loaded Sample Games
+1. **Medieval Quest: Kingdom Rising** - Epic fantasy adventure (Free)
+2. **Stellar Horizons** - Space exploration (250 G)
+3. **Shadows of Ravencrest Manor** - Victorian mystery (Free)
+4. **Dunes of Destiny** - Desert survival (150 G)
+5. **Abyssal Treasures** - Underwater exploration (Free)
+
+### Instant Guest Access
+- Click "Try as Guest" for immediate access
+- Auto-generated username (e.g., Guest123456)
+- Automatic developer role with full portal access
+- 1,000 Grind tokens to start
+- Create and publish games immediately
+- All data stored locally in your browser
 
 ## Platform Architecture
 
