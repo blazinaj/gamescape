@@ -35,10 +35,13 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       if (!data.user) throw new Error('Failed to create guest account');
 
       const username = `Guest${timestamp.toString().slice(-6)}`;
-      const profile = await profileService.createUserProfile(data.user.id, username, undefined, 'developer');
+
+      const profile = await profileService.createUserProfile(data.user.id, username);
       if (!profile) throw new Error('Failed to create profile');
 
-      await profileService.upgradeToDeveoper(data.user.id);
+      const upgraded = await profileService.upgradeToDeveoper(data.user.id);
+      if (!upgraded) console.warn('Failed to upgrade guest to developer');
+
       await grindTokenService.ensureWallet(data.user.id);
       await grindTokenService.awardGrind(data.user.id, 1000, 'Welcome bonus for new guest!');
 

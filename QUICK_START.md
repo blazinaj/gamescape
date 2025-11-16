@@ -20,6 +20,9 @@ The database schema needs to be updated. Choose one method:
 3. Click "SQL Editor" → "New Query"
 4. Copy/paste contents of: `supabase/migrations/20251116000000_platform_architecture.sql`
 5. Click "Run"
+6. **Add Sample Games**: Create another new query
+7. Copy/paste contents of: `supabase/migrations/20251116000001_sample_games.sql`
+8. Click "Run" - This adds 5 demo games to the store!
 
 **Option B: Direct SQL**
 ```bash
@@ -28,6 +31,13 @@ supabase db push
 ```
 
 See [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for detailed instructions.
+
+**Sample Games Included:**
+- Medieval Quest: Kingdom Rising (Free)
+- Stellar Horizons (250 G)
+- Shadows of Ravencrest Manor (Free)
+- Dunes of Destiny (150 G)
+- Abyssal Treasures (Free)
 
 ### 2. Test the Platform
 

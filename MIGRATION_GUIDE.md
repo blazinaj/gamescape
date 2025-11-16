@@ -2,13 +2,14 @@
 
 ## Applying the Platform Architecture Migration
 
-The platform architecture migration file is located at:
-```
-supabase/migrations/20251116000000_platform_architecture.sql
-```
+Two migration files need to be applied:
+
+1. **Platform Architecture**: `supabase/migrations/20251116000000_platform_architecture.sql`
+2. **Sample Games**: `supabase/migrations/20251116000001_sample_games.sql`
 
 ## Option 1: Supabase Dashboard (Recommended)
 
+**Step 1: Apply Platform Architecture**
 1. Go to your Supabase project dashboard
 2. Navigate to **SQL Editor**
 3. Click **New Query**
@@ -16,6 +17,13 @@ supabase/migrations/20251116000000_platform_architecture.sql
 5. Paste into the query editor
 6. Click **Run** to execute the migration
 7. Verify tables were created in the **Table Editor**
+
+**Step 2: Add Sample Games (Optional but Recommended)**
+1. In SQL Editor, click **New Query**
+2. Copy the contents of `supabase/migrations/20251116000001_sample_games.sql`
+3. Paste into the query editor
+4. Click **Run**
+5. Verify games appear in `game_projects` and `game_store_listings` tables
 
 ## Option 2: Supabase CLI
 
