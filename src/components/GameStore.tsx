@@ -15,7 +15,7 @@ export const GameStore: React.FC<GameStoreProps> = ({
   onNavigateToPlay,
   onNavigateToDevelop,
 }) => {
-  const { profile, isDeveloper } = useProfile();
+  const { profile, isDeveloper, upgradeToDeveloper } = useProfile();
   const { wallet, formatAmount } = useGrindWallet();
   const { signOut } = useAuth();
   const [featuredGames, setFeaturedGames] = useState<GameStoreItem[]>([]);
@@ -23,6 +23,7 @@ export const GameStore: React.FC<GameStoreProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'featured' | 'all' | 'owned'>('featured');
+  const [isUpgrading, setIsUpgrading] = useState(false);
 
   useEffect(() => {
     loadGames();
@@ -49,6 +50,15 @@ export const GameStore: React.FC<GameStoreProps> = ({
     const results = await gameStoreService.searchGames(searchTerm, 20);
     setAllGames(results);
     setActiveTab('all');
+  };
+
+  const handleUpgradeToDeveloper = async () => {
+    setIsUpgrading(true);
+    const success = await upgradeToDeveloper();
+    if (success) {
+      onNavigateToDevelop();
+    }
+    setIsUpgrading(false);
   };
 
   const renderGameCard = (item: GameStoreItem) => (
@@ -140,13 +150,22 @@ export const GameStore: React.FC<GameStoreProps> = ({
               <span className="text-white">{profile?.username}</span>
             </div>
 
-            {isDeveloper && (
+            {isDeveloper ? (
               <button
                 onClick={onNavigateToDevelop}
                 className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
               >
                 <Code2 className="w-5 h-5" />
                 <span>Developer</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleUpgradeToDeveloper}
+                disabled={isUpgrading}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              >
+                <Code2 className="w-5 h-5" />
+                <span>{isUpgrading ? 'Upgrading...' : 'Become Developer'}</span>
               </button>
             )}
 

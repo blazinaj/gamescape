@@ -32,7 +32,13 @@ When a user clicks "Try as Guest":
    await profileService.ensureUserProfile(data.user.id, username);
    ```
 
-5. **Wallet Setup**
+5. **Developer Upgrade**
+   ```typescript
+   const profile = await profileService.createUserProfile(data.user.id, username, undefined, 'developer');
+   await profileService.upgradeToDeveoper(data.user.id);
+   ```
+
+6. **Wallet Setup**
    ```typescript
    await grindTokenService.ensureWallet(data.user.id);
    await grindTokenService.awardGrind(data.user.id, 1000, 'Welcome bonus for new guest!');
@@ -42,15 +48,19 @@ When a user clicks "Try as Guest":
 
 ### Automatic Setup
 - Username: `Guest` + last 6 digits of timestamp (e.g., "Guest847392")
+- Role: **Developer** (full access)
 - Welcome bonus: 1,000 Grind tokens
-- Full platform access
+- Full platform access including developer features
 
 ### Capabilities
 - Browse game store
 - Play games
 - Create save files
 - Review games
-- Use all player features
+- **Create game projects** - Full developer portal access
+- **Publish games** - Test complete developer workflow
+- **Manage projects** - Edit, test, and delete games
+- Use all platform features (player + developer)
 
 ### Limitations
 - No email notifications (uses @gamescape.temp domain)

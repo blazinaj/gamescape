@@ -109,8 +109,9 @@ Try Gamescape instantly without signing up:
 2. Click "Try as Guest" button
 3. Instantly access the platform with:
    - Auto-generated username
+   - **Developer role** - Full developer portal access
    - 1,000 Grind tokens welcome bonus
-   - Full platform features
+   - Can create and publish games immediately
    - Perfect for testing and onboarding
 
 Guest accounts are temporary - create a real account to save progress permanently.

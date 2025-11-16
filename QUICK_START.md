@@ -49,7 +49,9 @@ Open http://localhost:5173
 
 **Guest Account Features:**
 - Auto-generated username (e.g., "Guest123456")
+- **Developer role** - Full developer portal access
 - Pre-loaded wallet with 1,000 G
+- Can create and publish game projects
 - Full access to store and games
 - Can create save files
 - Perfect for onboarding and development testing
@@ -58,8 +60,8 @@ Open http://localhost:5173
 
 ### 4. Create Your First Game Project
 
-1. **Sign Up** - Create an account (or use guest)
-2. **Upgrade to Developer** - Enable developer features
+1. **Sign Up** - Create an account (or use guest - already has developer access)
+2. **Access Developer Portal** - Click "Developer" button (guests have this by default)
 3. **Create Project** - Name your game and add description
 4. **Configure** - Set game parameters and scenarios
 5. **Publish** - Make it available in the store
