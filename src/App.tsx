@@ -1,49 +1,81 @@
 import React, { useState } from 'react';
 import { Game3D } from './components/Game3D';
-import { StartMenu } from './components/StartMenu';
-import { GameScenario } from './components/ScenarioSelector';
-
-type AppState = 'menu' | 'game';
+import { MainMenu } from './components/MainMenu';
+import { GameStore } from './components/GameStore';
+import { DeveloperPortal } from './components/DeveloperPortal';
+import { AppMode } from './types/AppTypes';
+import { useAuth } from './hooks/useAuth';
+import { useProfile } from './hooks/useProfile';
 
 function App() {
-  const [appState, setAppState] = useState<AppState>('menu');
+  const { user, loading: authLoading } = useAuth();
+  const { profile, loading: profileLoading } = useProfile();
+  const [appMode, setAppMode] = useState<AppMode>('store');
   const [currentGameId, setCurrentGameId] = useState<string | null>(null);
-  const [currentScenario, setCurrentScenario] = useState<GameScenario | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
 
-  const handleNewGame = (gameId: string) => {
-    setCurrentGameId(gameId);
-    setAppState('game');
-  };
-
-  const handleLoadGame = (gameId: string) => {
-    setCurrentGameId(gameId);
-    setCurrentScenario(null);
-    setAppState('game');
-  };
-
-  const handleReturnToMenu = () => {
+  const handleNavigateToStore = () => {
+    setAppMode('store');
     setCurrentGameId(null);
-    setCurrentScenario(null);
-    setAppState('menu');
+    setCurrentProjectId(null);
   };
 
-  if (appState === 'menu') {
+  const handleNavigateToPlay = (gameId: string) => {
+    setCurrentGameId(gameId);
+    setAppMode('play');
+  };
+
+  const handleNavigateToDevelop = (projectId?: string) => {
+    setCurrentProjectId(projectId || null);
+    setAppMode('develop');
+  };
+
+  const handleReturnToStore = () => {
+    setCurrentGameId(null);
+    setCurrentProjectId(null);
+    setAppMode('store');
+  };
+
+  if (authLoading || profileLoading) {
     return (
-      <StartMenu
-        onNewGame={handleNewGame}
-        onLoadGame={handleLoadGame}
+      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+        <div className="text-white text-xl">Loading Gamescape...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <MainMenu onNavigate={handleNavigateToStore} />
+    );
+  }
+
+  if (appMode === 'play' && currentGameId) {
+    return (
+      <div className="w-full h-screen overflow-hidden">
+        <Game3D
+          gameId={currentGameId}
+          onReturnToMenu={handleReturnToStore}
+        />
+      </div>
+    );
+  }
+
+  if (appMode === 'develop') {
+    return (
+      <DeveloperPortal
+        currentProjectId={currentProjectId}
+        onNavigateToStore={handleNavigateToStore}
+        onNavigateToPlay={handleNavigateToPlay}
       />
     );
   }
 
   return (
-    <div className="w-full h-screen overflow-hidden">
-      <Game3D
-        gameId={currentGameId || undefined}
-        scenario={currentScenario || undefined}
-        onReturnToMenu={handleReturnToMenu}
-      />
-    </div>
+    <GameStore
+      onNavigateToPlay={handleNavigateToPlay}
+      onNavigateToDevelop={handleNavigateToDevelop}
+    />
   );
 }
 

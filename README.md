@@ -1,21 +1,51 @@
-# GameScape
+# Gamescape
 
-GameScape is an AI-powered procedural adventure game featuring infinite world generation, intelligent NPCs, and comprehensive character progression systems.
+**Gamescape** is a revolutionary browser-based game engine and platform that combines AI-powered game creation with a curated marketplace. Create, publish, and monetize games while players discover infinite procedurally-generated worlds.
 
-## Features
+## Platform Overview
 
-### Core Gameplay
-- **Procedural World Generation** - Worlds are generated dynamically using AI, creating unique landscapes and environments
-- **AI-Powered NPCs** - Non-player characters with contextual dialogue and personality-driven interactions
-- **Character Progression** - Multi-skill system covering combat, gathering, crafting, and exploration
-- **Equipment System** - Tools and weapons with durability, upgrades, and specialized functions
-- **Resource Management** - Inventory system with harvestable materials and crafting components
+Gamescape operates in three integrated modes:
 
-### Technical Features
-- **Auto-Save System** - Automatic progress saving with cloud synchronization
-- **3D Graphics** - Real-time rendered environments using Three.js
-- **Responsive Design** - Optimized interface for various screen sizes
-- **Authentication** - Secure user accounts with individual save slots
+### 🎮 Game Store
+- Discover and play AI-generated games created by developers
+- Browse featured games and top-rated experiences
+- Purchase games with Grind tokens or play free titles
+- Build your personal game library
+
+### 🕹️ Play Mode
+- Experience unique procedurally-generated adventures
+- Intelligent NPCs with contextual dialogue
+- Multi-skill progression system
+- Persistent world with auto-save
+
+### 💻 Developer Portal
+- Create and publish games using AI tools
+- Configure game parameters and scenarios
+- Track analytics and revenue
+- Manage multiple game projects
+
+## Core Features
+
+### For Players
+- **Game Discovery** - Curated store with featured games, ratings, and reviews
+- **Token Economy** - Earn and spend Grind tokens for games and rewards
+- **Procedural Worlds** - AI-generated environments with infinite variety
+- **Character Progression** - Skills, equipment, inventory, and crafting
+- **Social Features** - Reviews, ratings, and community engagement
+
+### For Developers
+- **Game Creation** - AI-assisted world generation and NPC creation
+- **Publishing Platform** - Deploy games directly to the store
+- **Monetization** - Earn Grind tokens from game sales (90% revenue share)
+- **Analytics Dashboard** - Track plays, players, ratings, and revenue
+- **Asset Management** - Upload custom models, textures, and scripts
+
+### Engine Features
+- **AI-Powered Generation** - Dynamic world creation using OpenAI GPT-4
+- **3D Rendering** - Real-time graphics with Three.js
+- **Auto-Save System** - Cloud synchronization via Supabase
+- **Multi-tenancy** - Isolated game instances per developer
+- **Secure Economy** - Row-level security for all user data
 
 ## Technology Stack
 
@@ -58,10 +88,30 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 VITE_OPENAI_API_KEY=your_openai_api_key
 ```
 
-5. Start development server
+5. Apply database migrations
+
+See [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for detailed instructions on setting up the database schema.
+
+Quick method via Supabase Dashboard:
+- Open SQL Editor
+- Run the migration file: `supabase/migrations/20251116000000_platform_architecture.sql`
+
+6. Start development server
 ```bash
 npm run dev
 ```
+
+## Platform Architecture
+
+For detailed information about the platform architecture, database schema, and development workflow, see [PLATFORM_ARCHITECTURE.md](./PLATFORM_ARCHITECTURE.md).
+
+### Key Concepts
+
+- **User Roles**: Players, Developers, Admins
+- **Game Projects**: Developer-created game templates
+- **Game Instances**: Player save files
+- **Grind Tokens**: Platform currency for transactions
+- **Store Listings**: Public marketplace presence
 
 ## Controls
 
@@ -118,18 +168,57 @@ Players progress through multiple skill trees:
 - Health and damage systems with critical hits
 - Experience gains from successful encounters
 
+## Grind Token Economy
+
+Gamescape uses **Grind (G)** as its platform currency:
+
+### For Players
+- **Earn**: Complete achievements, play games, participate in events
+- **Spend**: Purchase games, unlock premium features
+- **Transfer**: Send tokens to other players
+
+### For Developers
+- **Earn**: 90% of game sales revenue
+- **Platform Fee**: 10% supports platform operations
+- **Payout**: Automatic via transaction system
+
+### Transaction Types
+- `purchase` - Buy games from the store
+- `reward` - System rewards for achievements
+- `transfer` - Player-to-player transactions
+- `developer_payout` - Revenue distribution
+
+All transactions are secure, transparent, and tracked in the blockchain-like ledger system.
+
 ## Project Structure
 
 ```
 src/
-├── components/          # React components
-│   ├── character/      # Character-related components
-│   ├── GameUI/         # Game interface elements
-│   └── [others]        # Various game components
-├── services/           # Game logic and systems
-├── types/              # TypeScript type definitions
-├── hooks/              # Custom React hooks
-└── lib/                # External library configurations
+├── components/
+│   ├── MainMenu.tsx           # Landing and authentication
+│   ├── GameStore.tsx          # Game marketplace
+│   ├── DeveloperPortal.tsx    # Developer workspace
+│   ├── Game3D.tsx             # 3D game renderer
+│   ├── character/             # Character components
+│   └── GameUI/                # Game interface
+├── services/
+│   ├── ProfileService.ts      # User/developer profiles
+│   ├── GameProjectService.ts  # Game CRUD operations
+│   ├── GameStoreService.ts    # Store and discovery
+│   ├── GrindTokenService.ts   # Token economy
+│   ├── SaveSystem.ts          # Game persistence
+│   └── [game systems]         # Combat, inventory, etc.
+├── types/
+│   ├── PlatformTypes.ts       # Platform entities
+│   ├── AppTypes.ts            # Application state
+│   └── [game types]           # Game-specific types
+├── hooks/
+│   ├── useProfile.ts          # Profile management
+│   ├── useGrindWallet.ts      # Wallet state
+│   ├── useAuth.ts             # Authentication
+│   └── useGameState.ts        # Game state
+└── lib/
+    └── supabase.ts            # Supabase client
 ```
 
 ## Development
@@ -151,13 +240,35 @@ npx tsc --noEmit
 
 ## Database Schema
 
-The game uses Supabase with the following primary tables:
-- `games` - Save game data and player state
+The platform uses Supabase with comprehensive multi-tenant architecture:
+
+### User & Profile Tables
+- `user_profiles` - Extended user information and roles
+- `developer_profiles` - Developer-specific data
+
+### Game Management Tables
+- `game_projects` - Developer-created game templates
+- `game_store_listings` - Public marketplace presence
+- `game_assets` - Developer-uploaded resources
+- `games` - Player save files/instances
+
+### Player Progression Tables
 - `map_tiles` - Generated world segments
-- `player_skills` - Character progression data
+- `player_skills` - Character progression
 - `player_inventory` - Item storage
-- `player_equipment` - Tool and weapon information
-- `npc_states` - Conversation history and NPC interactions
+- `player_equipment` - Tools and weapons
+- `npc_states` - Conversation history
+
+### Economy Tables
+- `grind_wallets` - Token balances
+- `grind_transactions` - Transaction history
+
+### Social Tables
+- `game_reviews` - Player ratings and reviews
+- `game_analytics` - Usage metrics
+- `game_access` - Access control
+
+See [PLATFORM_ARCHITECTURE.md](./PLATFORM_ARCHITECTURE.md) for complete schema documentation.
 
 ## Contributing
 
