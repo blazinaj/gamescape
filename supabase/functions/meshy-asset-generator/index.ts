@@ -18,6 +18,8 @@ const GAME_ANIMATIONS: Record<string, number> = {
   death: 8,
 };
 
+const RIGGABLE_CATEGORIES = ["character", "enemy", "npc"];
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -142,8 +144,8 @@ async function handleGenerateModel(
     return jsonResponse({ error: "Prompt is required" }, 400);
   }
 
-  const isCharacter = asset_category === "character";
-  const promptPrefix = isCharacter
+  const shouldRig = RIGGABLE_CATEGORIES.includes(asset_category || "");
+  const promptPrefix = shouldRig
     ? "A detailed 3D character model."
     : "A detailed 3D game asset.";
   const enhancedPrompt = `${promptPrefix} ${prompt}. Game-ready, optimized for real-time rendering.`;
@@ -182,7 +184,7 @@ async function handleGenerateModel(
     return jsonResponse({ error: `Database error: ${assetError.message}` }, 500);
   }
 
-  scheduleModelPolling(meshyApiKey, asset.id, meshyResult.taskId, isCharacter, supabase);
+  scheduleModelPolling(meshyApiKey, asset.id, meshyResult.taskId, shouldRig, supabase);
 
   return jsonResponse({
     success: true,
@@ -290,7 +292,10 @@ async function handleSeedSingle(
     assetId = asset.id;
   }
 
-  scheduleModelPolling(meshyApiKey, assetId, meshyResult.taskId, false, supabase);
+  const shouldRig = RIGGABLE_CATEGORIES.includes(category || "") ||
+    (tags || []).some((t: string) => RIGGABLE_CATEGORIES.includes(t));
+
+  scheduleModelPolling(meshyApiKey, assetId, meshyResult.taskId, shouldRig, supabase);
 
   return jsonResponse({
     success: true,
@@ -323,6 +328,14 @@ async function handlePollAndUpdate(
 
   if (taskStatus.status === "SUCCEEDED") {
     const glbUrl = taskStatus.model_urls?.glb;
+
+    const { data: currentAsset } = await supabase
+      .from("asset_library")
+      .select("metadata, tags")
+      .eq("id", asset_id)
+      .maybeSingle();
+    const existingMeta = currentAsset?.metadata || {};
+
     await supabase
       .from("asset_library")
       .update({
@@ -331,7 +344,7 @@ async function handlePollAndUpdate(
         preview_url: taskStatus.thumbnail_url || glbUrl,
         updated_at: new Date().toISOString(),
         metadata: {
-          model_type: "generated",
+          ...existingMeta,
           formats: {
             glb: taskStatus.model_urls?.glb,
             fbx: taskStatus.model_urls?.fbx,
@@ -341,6 +354,16 @@ async function handlePollAndUpdate(
         },
       })
       .eq("id", asset_id);
+
+    const category = existingMeta.model_type || "";
+    const assetTags: string[] = currentAsset?.tags || [];
+    const shouldRig = RIGGABLE_CATEGORIES.includes(category) ||
+      assetTags.some((t: string) => RIGGABLE_CATEGORIES.includes(t));
+
+    if (shouldRig && glbUrl) {
+      console.log(`poll-and-update: auto-rigging asset ${asset_id}`);
+      await startRiggingPipeline(meshyApiKey, asset_id, glbUrl, supabase);
+    }
 
     return jsonResponse({ status: "completed", file_url: glbUrl, preview_url: taskStatus.thumbnail_url });
   }
@@ -613,7 +636,7 @@ function scheduleModelPolling(
   meshyApiKey: string,
   assetId: string,
   meshyRequestId: string,
-  isCharacter: boolean,
+  shouldAutoRig: boolean,
   supabase: ReturnType<typeof createClient>
 ) {
   EdgeRuntime.waitUntil(
@@ -637,6 +660,14 @@ function scheduleModelPolling(
 
           if (taskStatus.status === "SUCCEEDED") {
             const glbUrl = taskStatus.model_urls?.glb;
+
+            const { data: currentAsset } = await supabase
+              .from("asset_library")
+              .select("metadata")
+              .eq("id", assetId)
+              .maybeSingle();
+            const existingMeta = currentAsset?.metadata || {};
+
             await supabase
               .from("asset_library")
               .update({
@@ -645,7 +676,7 @@ function scheduleModelPolling(
                 preview_url: taskStatus.thumbnail_url || glbUrl,
                 updated_at: new Date().toISOString(),
                 metadata: {
-                  model_type: "generated",
+                  ...existingMeta,
                   formats: {
                     glb: taskStatus.model_urls?.glb,
                     fbx: taskStatus.model_urls?.fbx,
@@ -658,8 +689,8 @@ function scheduleModelPolling(
 
             console.log(`Asset ${assetId} completed`);
 
-            if (isCharacter && glbUrl) {
-              console.log(`Auto-rigging character asset ${assetId}`);
+            if (shouldAutoRig && glbUrl) {
+              console.log(`Auto-rigging asset ${assetId} (category detected as riggable)`);
               await startRiggingPipeline(meshyApiKey, assetId, glbUrl, supabase);
             }
             return;
