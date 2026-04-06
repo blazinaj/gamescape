@@ -71,7 +71,7 @@ async function callMeshyGenerate(meshyApiKey: string, prompt: string, artStyle: 
     body: JSON.stringify({
       mode: "preview",
       prompt,
-      art_style: artStyle || "realistic",
+      art_style: "realistic",
       negative_prompt: "low quality, blurry, distorted, broken geometry, text, watermark",
     }),
   });

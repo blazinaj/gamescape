@@ -36,7 +36,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Goblin Scout",
     prompt: "A small green goblin creature with pointy ears, wearing tattered leather scraps, holding a crude dagger, menacing expression",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "character",
     tags: ["character", "goblin", "enemy", "creature", "monster"],
     description: "Goblin enemy creature with dagger",
@@ -62,7 +62,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Oak Tree",
     prompt: "A large oak tree with a thick gnarled trunk and wide spreading canopy of green leaves, detailed bark texture",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "vegetation",
     tags: ["tree", "oak", "vegetation", "environment", "nature"],
     description: "Large oak tree with spreading canopy",
@@ -70,7 +70,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Pine Tree",
     prompt: "A tall conifer pine tree with dark green needles in a classic triangular shape, brown textured trunk",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "vegetation",
     tags: ["tree", "pine", "conifer", "vegetation", "environment"],
     description: "Tall pine tree with triangular shape",
@@ -78,7 +78,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Flowering Bush",
     prompt: "A round leafy green bush shrub with small pink and white flowers blooming, garden hedgerow style",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "vegetation",
     tags: ["bush", "shrub", "vegetation", "environment", "flowers"],
     description: "Flowering garden bush with pink blooms",
@@ -86,7 +86,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Giant Mushroom",
     prompt: "A large fantasy mushroom with a wide red cap dotted with white spots, thick pale stem, magical forest mushroom, bioluminescent glow",
-    art_style: "cartoon",
+    art_style: "realistic",
     category: "vegetation",
     tags: ["mushroom", "vegetation", "fantasy", "environment", "magical"],
     description: "Fantasy red-capped mushroom with bioluminescent glow",
@@ -94,7 +94,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Willow Tree",
     prompt: "A weeping willow tree with long drooping branches and delicate green leaves cascading down, peaceful and elegant",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "vegetation",
     tags: ["tree", "willow", "vegetation", "environment", "nature"],
     description: "Elegant weeping willow with drooping branches",
@@ -104,7 +104,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Medieval Cottage",
     prompt: "A small medieval cottage house with timber frame walls, thatched roof, stone chimney, wooden door, flower boxes in windows",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "structure",
     tags: ["building", "cottage", "house", "medieval", "structure"],
     description: "Cozy medieval cottage with thatched roof",
@@ -120,7 +120,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Wooden Bridge",
     prompt: "A rustic wooden plank bridge with rope railings spanning a gap, weathered timber, sturdy construction",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "structure",
     tags: ["bridge", "wooden", "structure", "environment", "path"],
     description: "Rope and plank wooden bridge",
@@ -128,7 +128,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Stone Well",
     prompt: "A medieval stone well with a wooden roof frame, iron chain and bucket, moss-covered stone base, cobblestone surround",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "structure",
     tags: ["well", "stone", "structure", "interactive", "medieval"],
     description: "Stone well with wooden roof and bucket",
@@ -146,7 +146,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Treasure Chest",
     prompt: "A wooden treasure chest with iron bands, padlock, slightly open revealing gold coins and gems inside, ornate metal corners",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "item",
     tags: ["chest", "treasure", "item", "interactive", "loot"],
     description: "Ornate treasure chest with gold and gems",
@@ -154,7 +154,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Wooden Barrel",
     prompt: "A traditional wooden barrel with metal hoops, slightly worn and weathered, tavern or storage barrel",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "item",
     tags: ["barrel", "wooden", "item", "prop", "storage"],
     description: "Weathered wooden storage barrel",
@@ -170,7 +170,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Campfire",
     prompt: "A stone-ringed campfire with burning logs, orange flames and glowing embers, small sparks rising, warm light",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "item",
     tags: ["campfire", "fire", "interactive", "environment", "light"],
     description: "Stone-ringed campfire with burning logs",
@@ -178,7 +178,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Magic Crystal",
     prompt: "A cluster of large glowing blue magical crystals emerging from a stone base, translucent with inner light, arcane energy",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "item",
     tags: ["crystal", "magical", "item", "resource", "glowing"],
     description: "Glowing blue magical crystal cluster",
@@ -204,7 +204,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Wooden Shield",
     prompt: "A round wooden shield with iron boss center, metal rim, leather straps on back, painted heraldic design",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "weapon",
     tags: ["shield", "weapon", "defense", "equipment", "wooden"],
     description: "Round wooden shield with heraldic design",
@@ -230,7 +230,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Wooden Cart",
     prompt: "A medieval wooden horse-drawn cart with two large wheels, open bed for cargo, weathered timber construction",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "prop",
     tags: ["cart", "vehicle", "wooden", "prop", "medieval"],
     description: "Medieval wooden cargo cart",
@@ -238,7 +238,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Street Lantern",
     prompt: "A wrought iron medieval street lantern on a tall pole, glass panes with warm candlelight inside, ornate metalwork",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "prop",
     tags: ["lantern", "light", "prop", "street", "medieval"],
     description: "Wrought iron street lantern with warm glow",
@@ -254,7 +254,7 @@ export const SEED_ASSETS: SeedAssetDefinition[] = [
   {
     name: "Wooden Crate",
     prompt: "A sturdy wooden storage crate with metal reinforcement corners and nails, shipping crate with rope handles",
-    art_style: "stylized",
+    art_style: "realistic",
     category: "item",
     tags: ["crate", "wooden", "item", "storage", "interactive"],
     description: "Reinforced wooden storage crate",
