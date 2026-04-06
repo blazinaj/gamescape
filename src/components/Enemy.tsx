@@ -3,7 +3,7 @@ import { EnemyData, EnemyState } from '../types/EnemyTypes';
 import { HealthState, DamageInfo } from '../types/HealthTypes';
 import { collisionSystem } from '../services/CollisionSystem';
 import { CollisionObject } from '../types/CollisionTypes';
-import { findEntityAsset, loadEntityGLB } from '../services/EntityAssetResolver';
+import { findEnemyAsset, loadEntityGLB } from '../services/EntityAssetResolver';
 
 export class Enemy {
   public mesh: THREE.Group;
@@ -113,7 +113,7 @@ export class Enemy {
 
   private async tryLoadGLBModel(): Promise<void> {
     try {
-      const result = await findEntityAsset(this.data.type, ['enemy', this.data.type]);
+      const result = await findEnemyAsset(this.data.type);
       if (!result.found || !result.glbUrl) return;
 
       const targetHeight = this.data.appearance.scale * 2.0;

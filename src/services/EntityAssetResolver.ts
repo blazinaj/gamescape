@@ -2,21 +2,47 @@ import { supabase } from '../lib/supabase';
 import { getGLBModelLoader } from './GLBModelLoader';
 import * as THREE from 'three';
 
-interface AssetMatch {
+export interface AssetMatch {
   found: boolean;
   glbUrl?: string;
   assetId?: string;
   animations?: Record<string, string>;
 }
 
-const cache = new Map<string, AssetMatch>();
-const pending = new Set<string>();
+const ENEMY_TAG_MAP: Record<string, string[]> = {
+  goblin: ['goblin'],
+  skeleton: ['skeleton'],
+  wolf: ['wolf', 'creature'],
+  spider: ['spider', 'creature'],
+  orc: ['orc', 'creature'],
+  troll: ['troll', 'creature'],
+  dragon: ['dragon'],
+  boss: ['boss', 'dragon'],
+};
 
-export async function findEntityAsset(
-  entityType: string,
-  tags: string[]
-): Promise<AssetMatch> {
-  const cacheKey = `${entityType}:${tags.sort().join(',')}`;
+const NPC_TAG_MAP: Record<string, string[]> = {
+  'world guide': ['wizard', 'mage'],
+  guide: ['wizard', 'mage'],
+  sage: ['wizard', 'mage'],
+  wizard: ['wizard', 'mage'],
+  mage: ['wizard', 'mage'],
+  blacksmith: ['blacksmith'],
+  merchant: ['merchant', 'human'],
+  archer: ['archer', 'ranger'],
+  ranger: ['archer', 'ranger'],
+  guard: ['skeleton', 'warrior'],
+  warrior: ['warrior'],
+  villager: ['human', 'character'],
+  innkeeper: ['human', 'character'],
+  healer: ['wizard', 'mage'],
+  farmer: ['human', 'character'],
+};
+
+const cache = new Map<string, AssetMatch>();
+const NOT_FOUND: AssetMatch = { found: false };
+
+async function queryAssetByTag(tag: string): Promise<AssetMatch> {
+  const cacheKey = `tag:${tag}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey)!;
 
   try {
@@ -25,17 +51,17 @@ export async function findEntityAsset(
       .select('*')
       .eq('asset_type', 'model')
       .eq('status', 'completed')
-      .contains('tags', [entityType])
+      .contains('tags', [tag])
       .order('usage_count', { ascending: false })
-      .limit(1);
+      .limit(5);
 
     if (error || !assets || assets.length === 0) {
-      const result: AssetMatch = { found: false };
-      cache.set(cacheKey, result);
-      return result;
+      cache.set(cacheKey, NOT_FOUND);
+      return NOT_FOUND;
     }
 
-    const asset = assets[0];
+    const asset = assets[Math.floor(Math.random() * assets.length)];
+
     const animations: Record<string, string> = {};
     if (asset.metadata?.animations) {
       for (const [name, data] of Object.entries(asset.metadata.animations as Record<string, any>)) {
@@ -54,8 +80,63 @@ export async function findEntityAsset(
     cache.set(cacheKey, result);
     return result;
   } catch {
-    return { found: false };
+    return NOT_FOUND;
   }
+}
+
+export async function findEnemyAsset(enemyType: string): Promise<AssetMatch> {
+  const cacheKey = `enemy:${enemyType}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+
+  const tagsToTry = ENEMY_TAG_MAP[enemyType.toLowerCase()] || [enemyType.toLowerCase()];
+
+  for (const tag of tagsToTry) {
+    const result = await queryAssetByTag(tag);
+    if (result.found) {
+      cache.set(cacheKey, result);
+      return result;
+    }
+  }
+
+  const fallback = await queryAssetByTag('enemy');
+  cache.set(cacheKey, fallback);
+  return fallback;
+}
+
+export async function findNPCAsset(occupation: string, name?: string): Promise<AssetMatch> {
+  const key = (occupation || 'villager').toLowerCase();
+  const cacheKey = `npc:${key}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+
+  const tagsToTry = NPC_TAG_MAP[key] || [];
+
+  if (name) {
+    const nameKey = name.toLowerCase();
+    const nameMap = NPC_TAG_MAP[nameKey];
+    if (nameMap) tagsToTry.push(...nameMap);
+  }
+
+  tagsToTry.push('character');
+
+  for (const tag of tagsToTry) {
+    const result = await queryAssetByTag(tag);
+    if (result.found) {
+      cache.set(cacheKey, result);
+      return result;
+    }
+  }
+
+  cache.set(cacheKey, NOT_FOUND);
+  return NOT_FOUND;
+}
+
+export async function findMapObjectAsset(objectType: string): Promise<AssetMatch> {
+  const cacheKey = `map:${objectType}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+
+  const result = await queryAssetByTag(objectType);
+  cache.set(cacheKey, result);
+  return result;
 }
 
 export async function loadEntityGLB(
@@ -82,36 +163,6 @@ export async function loadEntityGLB(
   }
 }
 
-export function requestEntityGeneration(
-  entityType: string,
-  description: string,
-  tags: string[]
-): void {
-  const key = `gen:${entityType}`;
-  if (pending.has(key)) return;
-  pending.add(key);
-
-  const edgeFunctionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meshy-asset-generator`;
-
-  fetch(edgeFunctionUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      action: 'generate-model',
-      prompt: description,
-      art_style: 'stylized',
-      asset_category: 'character',
-      name: entityType,
-      description,
-      tags,
-    }),
-  }).catch(() => {});
-}
-
 export function clearEntityAssetCache(): void {
   cache.clear();
-  pending.clear();
 }

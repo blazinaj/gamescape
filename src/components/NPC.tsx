@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { NPCData } from '../types/MapTypes';
 import { collisionSystem } from '../services/CollisionSystem';
 import { CollisionObject } from '../types/CollisionTypes';
-import { findEntityAsset, loadEntityGLB } from '../services/EntityAssetResolver';
+import { findNPCAsset, loadEntityGLB } from '../services/EntityAssetResolver';
 
 export class NPC {
   public mesh: THREE.Group;
@@ -69,8 +69,8 @@ export class NPC {
 
   private async tryLoadGLBModel(): Promise<void> {
     try {
-      const occupation = (this.data.occupation || 'villager').toLowerCase();
-      const result = await findEntityAsset(occupation, ['npc', occupation, 'character']);
+      const occupation = this.data.occupation || 'villager';
+      const result = await findNPCAsset(occupation, this.data.name);
       if (!result.found || !result.glbUrl) return;
 
       const targetHeight = this.data.appearance.scale * 1.8;

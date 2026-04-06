@@ -6,7 +6,6 @@ import { NPC } from '../components/NPC';
 import { Character } from '../components/Character';
 import { collisionSystem } from '../services/CollisionSystem';
 import { getMeshyMapAssetService, MeshyMapAssetService } from './MeshyMapAssetService';
-import { getGLBModelLoader } from './GLBModelLoader';
 
 export class MapManager {
   private scene: THREE.Scene;
@@ -32,9 +31,6 @@ export class MapManager {
   private customStructures: any[] = [];
 
   private meshyAssetService: MeshyMapAssetService;
-  private glbAssetUrls: Map<string, string> = new Map();
-  private checkedObjectTypes: Set<string> = new Set();
-  private currentTheme: string = 'default';
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -52,35 +48,7 @@ export class MapManager {
 
   setScenario(prompt: string, theme: string): void {
     this.aiGenerator.setScenario(prompt, theme);
-    this.currentTheme = theme;
-    this.preloadMeshyAssets();
-    console.log(`🌍 Map manager using scenario theme: ${theme}`);
-  }
-
-  private async preloadMeshyAssets(): Promise<void> {
-    const commonTypes = ['tree', 'rock', 'building', 'bush', 'chest'];
-    for (const objectType of commonTypes) {
-      this.checkAndCacheAsset(objectType);
-    }
-  }
-
-  private async checkAndCacheAsset(objectType: string): Promise<void> {
-    const cacheKey = `${objectType}:${this.currentTheme}`;
-    if (this.checkedObjectTypes.has(cacheKey)) return;
-    this.checkedObjectTypes.add(cacheKey);
-
-    try {
-      const result = await this.meshyAssetService.findAssetForObjectType(objectType, this.currentTheme);
-      if (result.found && result.glbUrl) {
-        this.glbAssetUrls.set(objectType, result.glbUrl);
-        const loader = getGLBModelLoader();
-        loader.load(result.glbUrl).catch(() => {});
-      } else {
-        this.meshyAssetService.requestAssetGeneration(objectType, this.currentTheme).catch(() => {});
-      }
-    } catch {
-      // Silently continue with procedural fallback
-    }
+    this.meshyAssetService.preloadAllAssets().catch(() => {});
   }
   
   // Register custom vegetation for world generation
@@ -282,7 +250,7 @@ export class MapManager {
       if (obj.type === 'npc') {
         this.createNPC(obj, tile);
       } else {
-        const mesh = this.createObjectMesh(obj, tile.biome, index);
+        const mesh = this.createObjectMesh(obj, tile.biome, index, tileGroup);
         if (mesh) {
           tileGroup.add(mesh);
           
@@ -509,36 +477,16 @@ export class MapManager {
     return nearbyNPCs;
   }
 
-  private createObjectMesh(obj: MapObject, biome: string, index: number): THREE.Object3D | null {
+  private createObjectMesh(obj: MapObject, biome: string, index: number, tileGroup?: THREE.Group): THREE.Object3D | null {
     const cacheKey = `${obj.type}_${biome}_${obj.scale.x}_${obj.scale.y}_${obj.scale.z}`;
 
-    const glbUrl = this.glbAssetUrls.get(obj.type);
-    if (glbUrl) {
-      const loader = getGLBModelLoader();
-      if (loader.isLoaded(glbUrl)) {
-        const clone = loader.clone(glbUrl);
-        if (clone) {
-          const box = new THREE.Box3().setFromObject(clone);
-          const size = box.getSize(new THREE.Vector3());
-          const maxDim = Math.max(size.x, size.y, size.z);
-          const targetSizes: Record<string, number> = {
-            tree: 4.0, rock: 1.0, building: 3.0, chest: 0.6,
-            ruins: 2.0, bush: 1.0, mushroom: 0.4, crystal: 1.5,
-            well: 2.0, campfire: 0.8, statue: 2.0, fence: 1.0,
-            cart: 1.2, log: 2.0, crate: 0.6,
-          };
-          const targetSize = targetSizes[obj.type] || 1.0;
-          const s = targetSize / (maxDim || 1);
-          clone.scale.set(s * obj.scale.x, s * obj.scale.y, s * obj.scale.z);
-          clone.position.set(obj.position.x, obj.position.y, obj.position.z);
-          clone.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
-          return clone;
-        }
-      }
-    }
+    const pos = new THREE.Vector3(obj.position.x, obj.position.y, obj.position.z);
+    const scl = new THREE.Vector3(obj.scale.x, obj.scale.y, obj.scale.z);
+    const rot = new THREE.Euler(obj.rotation.x, obj.rotation.y, obj.rotation.z);
 
-    if (!this.checkedObjectTypes.has(`${obj.type}:${this.currentTheme}`)) {
-      this.checkAndCacheAsset(obj.type);
+    if (this.meshyAssetService.isReady(obj.type)) {
+      const glbMesh = this.meshyAssetService.cloneForObject(obj.type, pos, scl, rot);
+      if (glbMesh) return glbMesh;
     }
 
     if (this.objectMeshCache.has(cacheKey) && Math.random() < 0.3) {
@@ -546,101 +494,111 @@ export class MapManager {
       const clonedMesh = cachedMesh.clone();
       clonedMesh.position.set(obj.position.x, obj.position.y, obj.position.z);
       clonedMesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+      if (tileGroup && !this.meshyAssetService.isReady(obj.type)) {
+        this.meshyAssetService.registerPendingSwap(clonedMesh, tileGroup, obj.type, pos, scl, rot);
+      }
       return clonedMesh;
     }
+
+    const regSwap = (m: THREE.Object3D) => {
+      if (tileGroup && !this.meshyAssetService.isReady(obj.type)) {
+        this.meshyAssetService.registerPendingSwap(m, tileGroup, obj.type, pos, scl, rot);
+      }
+      return m;
+    };
 
     let geometry: THREE.BufferGeometry;
     let material: THREE.Material;
 
     switch (obj.type) {
-      case 'tree':
+      case 'tree': {
         const tree = this.createTree(obj, biome);
         this.objectMeshCache.set(cacheKey, tree.clone());
-        return tree;
-      
+        return regSwap(tree);
+      }
+
       case 'rock':
         geometry = new THREE.DodecahedronGeometry(0.5);
-        material = new THREE.MeshLambertMaterial({ 
-          color: obj.color ? parseInt(obj.color.replace('#', ''), 16) : 0x696969 
+        material = new THREE.MeshLambertMaterial({
+          color: obj.color ? parseInt(obj.color.replace('#', ''), 16) : 0x696969
         });
         break;
-      
+
       case 'building':
         geometry = new THREE.BoxGeometry(2, 3, 2);
         material = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
         break;
-      
+
       case 'hill':
         geometry = new THREE.SphereGeometry(2, 8, 6);
         material = new THREE.MeshLambertMaterial({ color: 0x228B22 });
         break;
-      
+
       case 'flower':
         return this.createFlower(obj);
-      
+
       case 'bush':
         geometry = new THREE.SphereGeometry(0.8, 8, 6);
         material = new THREE.MeshLambertMaterial({ color: 0x006400 });
         break;
-      
+
       case 'ruins':
         geometry = new THREE.CylinderGeometry(0.8, 1, 2, 8);
         material = new THREE.MeshLambertMaterial({ color: 0x708090 });
         break;
-      
+
       case 'water':
         geometry = new THREE.PlaneGeometry(3, 3);
-        material = new THREE.MeshLambertMaterial({ 
-          color: 0x1E40AF, 
-          transparent: true, 
-          opacity: 0.7 
+        material = new THREE.MeshLambertMaterial({
+          color: 0x1E40AF,
+          transparent: true,
+          opacity: 0.7
         });
         break;
 
-      // Detailed object types
       case 'chest':
-        return this.createChest(obj);
-      
+        return regSwap(this.createChest(obj));
+
       case 'crate':
-        return this.createCrate(obj);
-      
+        return regSwap(this.createCrate(obj));
+
       case 'plant':
         return this.createPlant(obj);
-      
+
       case 'mushroom':
-        return this.createMushroom(obj);
-      
+        return regSwap(this.createMushroom(obj));
+
       case 'crystal':
-        return this.createCrystal(obj);
-      
+        return regSwap(this.createCrystal(obj));
+
       case 'log':
-        return this.createLog(obj);
-      
+        return regSwap(this.createLog(obj));
+
       case 'berry_bush':
         return this.createBerryBush(obj);
-      
+
       case 'well':
-        return this.createWell(obj);
-      
+        return regSwap(this.createWell(obj));
+
       case 'campfire':
-        return this.createCampfire(obj);
-      
+        return regSwap(this.createCampfire(obj));
+
       case 'statue':
         geometry = new THREE.CylinderGeometry(0.3, 0.5, 2, 8);
         material = new THREE.MeshLambertMaterial({ color: 0xA0A0A0 });
         break;
-      
+
       case 'fence':
-        return this.createFence(obj);
-      
+        return regSwap(this.createFence(obj));
+
       case 'bridge':
         geometry = new THREE.BoxGeometry(4, 0.2, 1);
         material = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
         break;
-      
+
       case 'cart':
-        return this.createCart(obj);
-      
+        return regSwap(this.createCart(obj));
+
       default:
         return null;
     }
@@ -652,8 +610,11 @@ export class MapManager {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
-    // Cache for reuse
     this.objectMeshCache.set(cacheKey, mesh.clone());
+
+    if (tileGroup && !this.meshyAssetService.isReady(obj.type)) {
+      this.meshyAssetService.registerPendingSwap(mesh, tileGroup, obj.type, pos, scl, rot);
+    }
 
     return mesh;
   }
@@ -1473,8 +1434,6 @@ export class MapManager {
     this.isGenerating.clear();
     
     this.objectMeshCache.clear();
-    this.glbAssetUrls.clear();
-    this.checkedObjectTypes.clear();
     this.meshyAssetService.clearCache();
 
     // Clear interactable objects
