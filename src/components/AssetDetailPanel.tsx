@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Download,
@@ -15,6 +15,8 @@ import {
   Sparkles,
   Copy,
   Check,
+  Box,
+  Image,
 } from 'lucide-react';
 import type { Asset } from '../services/AssetLibraryService';
 import {
@@ -22,6 +24,7 @@ import {
   startRigging,
   type AnimationProgress,
 } from '../services/CharacterAnimationService';
+import { AnimationModelViewer } from './AnimationModelViewer';
 
 interface AssetDetailPanelProps {
   asset: Asset;
@@ -56,16 +59,28 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [rigging, setRigging] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'3d' | 'image'>('3d');
 
   const metadata = asset.metadata || {};
   const riggingMeta: RiggingMeta = metadata.rigging || {};
   const animationsMeta: Record<string, AnimationMeta> = metadata.animations || {};
   const formats = metadata.formats || {};
 
-  const isCharacter = asset.tags?.includes('character');
+  const isRiggable = asset.tags?.some(t => ['character', 'enemy', 'npc'].includes(t));
   const hasRigging = !!riggingMeta.task_id;
   const riggingComplete = riggingMeta.status === 'SUCCEEDED';
   const hasAnimations = Object.keys(animationsMeta).length > 0;
+  const hasModel = !!asset.file_url && asset.status === 'completed';
+
+  const animationGlbUrls = useMemo(() => {
+    const urls: Record<string, string> = {};
+    for (const [name, anim] of Object.entries(animationsMeta)) {
+      if (anim.glb_url && anim.status === 'SUCCEEDED') {
+        urls[name] = anim.glb_url;
+      }
+    }
+    return urls;
+  }, [animationsMeta]);
 
   useEffect(() => {
     if (hasRigging && !riggingComplete) {
@@ -130,19 +145,58 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
 
         <div className="p-5 space-y-6">
           {/* Preview */}
-          <div className="aspect-square bg-slate-800 rounded-xl overflow-hidden relative">
-            {asset.preview_url ? (
-              <img
-                src={asset.preview_url}
-                alt={asset.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Sparkles className="w-16 h-16 text-slate-700" />
+          <div className="relative">
+            {hasModel && (
+              <div className="absolute top-3 left-3 z-20 flex bg-slate-900/80 backdrop-blur-sm rounded-lg border border-slate-700/50 overflow-hidden">
+                <button
+                  onClick={() => setViewMode('3d')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    viewMode === '3d'
+                      ? 'bg-teal-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Box className="w-3.5 h-3.5" /> 3D
+                </button>
+                <button
+                  onClick={() => setViewMode('image')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    viewMode === 'image'
+                      ? 'bg-teal-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Image className="w-3.5 h-3.5" /> Preview
+                </button>
               </div>
             )}
-            <StatusBadge status={asset.status} />
+
+            {hasModel && viewMode === '3d' ? (
+              <div className="aspect-square rounded-xl overflow-hidden relative">
+                <AnimationModelViewer
+                  modelUrl={asset.file_url!}
+                  riggedModelUrl={riggingMeta.rigged_glb_url}
+                  animationUrls={animationGlbUrls}
+                  className="w-full h-full"
+                />
+                <StatusBadge status={asset.status} />
+              </div>
+            ) : (
+              <div className="aspect-square bg-slate-800 rounded-xl overflow-hidden relative">
+                {asset.preview_url ? (
+                  <img
+                    src={asset.preview_url}
+                    alt={asset.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Sparkles className="w-16 h-16 text-slate-700" />
+                  </div>
+                )}
+                <StatusBadge status={asset.status} />
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -170,7 +224,7 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
           </div>
 
           {/* Rig & Animate Action */}
-          {isCharacter && asset.status === 'completed' && !hasRigging && (
+          {isRiggable && asset.status === 'completed' && !hasRigging && (
             <button
               onClick={handleStartRigging}
               disabled={rigging}
