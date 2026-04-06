@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Maximize2,
   Minimize2,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AnimationModelViewerProps {
@@ -19,12 +20,22 @@ interface AnimationModelViewerProps {
   animationUrls?: Record<string, string>;
   riggedModelUrl?: string;
   className?: string;
+  onLoadError?: () => void;
 }
 
 interface LoadedAnimation {
   name: string;
   clip: THREE.AnimationClip;
-  sourceUrl: string;
+}
+
+function isValidUrl(url: string | undefined | null): url is string {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return url.startsWith('/');
+  }
 }
 
 export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
@@ -32,6 +43,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
   animationUrls = {},
   riggedModelUrl,
   className = '',
+  onLoadError,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -43,6 +55,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
   const clockRef = useRef(new THREE.Clock());
   const frameRef = useRef<number>(0);
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
+  const mountedRef = useRef(true);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +63,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
   const [activeAnim, setActiveAnim] = useState<number>(-1);
   const [playing, setPlaying] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   const initScene = useCallback(() => {
     if (!containerRef.current) return;
@@ -80,7 +94,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.target.set(0, 0.8, 0);
-    controls.minDistance = 1;
+    controls.minDistance = 0.5;
     controls.maxDistance = 10;
     controls.update();
 
@@ -160,24 +174,38 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
     setPlaying(true);
   }, [animations]);
 
+  const loadGltf = useCallback((loader: GLTFLoader, url: string): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      loader.load(url, resolve, undefined, reject);
+    });
+  }, []);
+
   useEffect(() => {
+    mountedRef.current = true;
     const result = initScene();
     if (!result) return;
 
     const { scene, renderer, controls } = result;
     const loader = new GLTFLoader();
-    const allAnimations: LoadedAnimation[] = [];
+    loader.setCrossOrigin('anonymous');
 
     const loadModel = async () => {
+      if (!mountedRef.current) return;
       setLoading(true);
       setError(null);
 
-      try {
-        const primaryUrl = riggedModelUrl || modelUrl;
+      const primaryUrl = isValidUrl(riggedModelUrl) ? riggedModelUrl : modelUrl;
 
-        const gltf = await new Promise<any>((resolve, reject) => {
-          loader.load(primaryUrl, resolve, undefined, reject);
-        });
+      if (!isValidUrl(primaryUrl)) {
+        setError('No valid model URL available');
+        setLoading(false);
+        onLoadError?.();
+        return;
+      }
+
+      try {
+        const gltf = await loadGltf(loader, primaryUrl);
+        if (!mountedRef.current) return;
 
         const model = gltf.scene;
         model.traverse((child: THREE.Object3D) => {
@@ -194,39 +222,36 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
         const mixer = new THREE.AnimationMixer(model);
         mixerRef.current = mixer;
 
+        const allAnimations: LoadedAnimation[] = [];
+
         if (gltf.animations && gltf.animations.length > 0) {
           gltf.animations.forEach((clip: THREE.AnimationClip) => {
             allAnimations.push({
               name: clip.name || `clip_${allAnimations.length}`,
               clip,
-              sourceUrl: primaryUrl,
             });
           });
         }
 
         const animEntries = Object.entries(animationUrls).filter(
-          ([, url]) => url && url !== primaryUrl
+          ([, url]) => isValidUrl(url) && url !== primaryUrl
         );
 
         for (const [name, url] of animEntries) {
+          if (!mountedRef.current) return;
           try {
-            const animGltf = await new Promise<any>((resolve, reject) => {
-              loader.load(url, resolve, undefined, reject);
-            });
-
+            const animGltf = await loadGltf(loader, url);
             if (animGltf.animations && animGltf.animations.length > 0) {
               animGltf.animations.forEach((clip: THREE.AnimationClip) => {
-                allAnimations.push({
-                  name,
-                  clip,
-                  sourceUrl: url,
-                });
+                allAnimations.push({ name, clip });
               });
             }
-          } catch (err) {
-            console.warn(`Failed to load animation "${name}":`, err);
+          } catch {
+            // individual animation load failure is non-critical
           }
         }
+
+        if (!mountedRef.current) return;
 
         setAnimations(allAnimations);
 
@@ -243,19 +268,24 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
 
         setLoading(false);
       } catch (err) {
+        if (!mountedRef.current) return;
         console.error('Model load error:', err);
-        setError('Failed to load 3D model');
+        setError('Could not load model. The file may be temporarily unavailable.');
         setLoading(false);
+        onLoadError?.();
       }
     };
 
     loadModel();
 
+    let playingLocal = true;
+    const playingProxy = { get: () => playingLocal, set: (v: boolean) => { playingLocal = v; } };
+
     const animate = () => {
       frameRef.current = requestAnimationFrame(animate);
       const delta = clockRef.current.getDelta();
 
-      if (mixerRef.current && playing) {
+      if (mixerRef.current && playingProxy.get()) {
         mixerRef.current.update(delta);
       }
 
@@ -276,7 +306,13 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
 
     window.addEventListener('resize', handleResize);
 
+    const playingInterval = setInterval(() => {
+      playingProxy.set(playing);
+    }, 100);
+
     return () => {
+      mountedRef.current = false;
+      clearInterval(playingInterval);
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(frameRef.current);
       controls.dispose();
@@ -291,7 +327,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
       modelRef.current = null;
       currentActionRef.current = null;
     };
-  }, [modelUrl, riggedModelUrl, JSON.stringify(animationUrls)]);
+  }, [modelUrl, riggedModelUrl, JSON.stringify(animationUrls), retryCount]);
 
   useEffect(() => {
     if (!containerRef.current || !cameraRef.current || !rendererRef.current) return;
@@ -316,6 +352,10 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
     if (modelRef.current) {
       fitCameraToModel(modelRef.current);
     }
+  };
+
+  const handleRetry = () => {
+    setRetryCount(c => c + 1);
   };
 
   const containerClass = expanded
@@ -345,9 +385,16 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
 
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#1a1e2e]/90 rounded-xl z-10">
-          <div className="flex flex-col items-center gap-2 text-center px-4">
+          <div className="flex flex-col items-center gap-3 text-center px-6">
             <AlertCircle className="w-8 h-8 text-red-400" />
             <span className="text-sm text-red-300">{error}</span>
+            <button
+              onClick={handleRetry}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Retry
+            </button>
           </div>
         </div>
       )}
