@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Library, Search, Download, TrendingUp, Clock, Database, RefreshCw, Filter } from 'lucide-react';
+import { Library, Search, Download, TrendingUp, Clock, Database, RefreshCw, Filter, Bone, Play } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { SeedAssetLibrary } from './SeedAssetLibrary';
+import { AssetDetailPanel } from './AssetDetailPanel';
 
 interface Asset {
   id: string;
@@ -15,6 +16,7 @@ interface Asset {
   created_at: string;
   asset_type: 'model' | 'animation' | 'texture';
   status: 'pending' | 'completed' | 'failed';
+  metadata?: Record<string, any>;
 }
 
 interface AssetLibraryBrowserProps {
@@ -34,6 +36,7 @@ export const AssetLibraryBrowser: React.FC<AssetLibraryBrowserProps> = ({ onAsse
   const [viewMode, setViewMode] = useState<ViewMode>('library');
   const [typeFilter, setTypeFilter] = useState<FilterType>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
 
   useEffect(() => {
     loadAssets();
@@ -203,85 +206,124 @@ export const AssetLibraryBrowser: React.FC<AssetLibraryBrowserProps> = ({ onAsse
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAssets.map(asset => (
-            <div
-              key={asset.id}
-              className="group bg-slate-800 border border-slate-700 rounded-xl overflow-hidden hover:border-teal-500/50 transition-all duration-200 cursor-pointer hover:shadow-lg hover:shadow-teal-500/5"
-              onClick={() => onAssetSelect?.(asset)}
-            >
-              <div className="aspect-square bg-slate-900 overflow-hidden relative">
-                {asset.preview_url ? (
-                  <img
-                    src={asset.preview_url}
-                    alt={asset.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Library className="w-12 h-12 text-gray-700" />
+          {filteredAssets.map(asset => {
+            const meta = asset.metadata || {};
+            const hasRig = !!meta.rigging?.task_id;
+            const rigDone = meta.rigging?.status === 'SUCCEEDED';
+            const anims = meta.animations || {};
+            const animsDone = Object.values(anims).filter((a: any) => a.status === 'SUCCEEDED').length;
+            const animsTotal = Object.keys(anims).length;
+
+            return (
+              <div
+                key={asset.id}
+                className="group bg-slate-800 border border-slate-700 rounded-xl overflow-hidden hover:border-teal-500/50 transition-all duration-200 cursor-pointer hover:shadow-lg hover:shadow-teal-500/5"
+                onClick={() => setSelectedAsset(asset)}
+              >
+                <div className="aspect-square bg-slate-900 overflow-hidden relative">
+                  {asset.preview_url ? (
+                    <img
+                      src={asset.preview_url}
+                      alt={asset.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Library className="w-12 h-12 text-gray-700" />
+                    </div>
+                  )}
+                  <div className={`absolute top-2 right-2 px-2 py-1 rounded-md text-xs font-medium ${
+                    asset.status === 'completed'
+                      ? 'bg-emerald-500/90 text-white'
+                      : asset.status === 'pending'
+                      ? 'bg-amber-500/90 text-white'
+                      : 'bg-red-500/90 text-white'
+                  }`}>
+                    {asset.status}
                   </div>
-                )}
-                <div className={`absolute top-2 right-2 px-2 py-1 rounded-md text-xs font-medium ${
-                  asset.status === 'completed'
-                    ? 'bg-emerald-500/90 text-white'
-                    : asset.status === 'pending'
-                    ? 'bg-amber-500/90 text-white'
-                    : 'bg-red-500/90 text-white'
-                }`}>
-                  {asset.status}
+                  {/* Rigging / Animation badges */}
+                  <div className="absolute bottom-2 left-2 flex gap-1.5">
+                    {hasRig && (
+                      <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        rigDone ? 'bg-blue-500/90 text-white' : 'bg-amber-500/80 text-white'
+                      }`}>
+                        <Bone className="w-2.5 h-2.5" />
+                        {rigDone ? 'Rigged' : 'Rigging'}
+                      </span>
+                    )}
+                    {animsTotal > 0 && (
+                      <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        animsDone === animsTotal ? 'bg-teal-500/90 text-white' : 'bg-amber-500/80 text-white'
+                      }`}>
+                        <Play className="w-2.5 h-2.5" />
+                        {animsDone}/{animsTotal}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="p-4">
-                <h3 className="font-semibold text-white mb-1.5 truncate group-hover:text-teal-300 transition-colors">
-                  {asset.name}
-                </h3>
+                <div className="p-4">
+                  <h3 className="font-semibold text-white mb-1.5 truncate group-hover:text-teal-300 transition-colors">
+                    {asset.name}
+                  </h3>
 
-                <p className="text-sm text-gray-500 mb-3 line-clamp-2">{asset.prompt}</p>
+                  <p className="text-sm text-gray-500 mb-3 line-clamp-2">{asset.prompt}</p>
 
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {asset.tags.slice(0, 4).map(tag => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 bg-slate-700/50 text-gray-400 text-xs rounded-md"
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {asset.tags.slice(0, 4).map(tag => (
+                      <span
+                        key={tag}
+                        className="px-2 py-0.5 bg-slate-700/50 text-gray-400 text-xs rounded-md"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {asset.tags.length > 4 && (
+                      <span className="px-2 py-0.5 text-gray-600 text-xs">
+                        +{asset.tags.length - 4}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+                    <div className="flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3" />
+                      {asset.usage_count} uses
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {new Date(asset.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+
+                  {asset.file_url && asset.status === 'completed' && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        window.open(asset.file_url!, '_blank');
+                      }}
+                      className="w-full py-2 px-3 bg-teal-600 hover:bg-teal-500 text-white text-sm rounded-lg flex items-center justify-center gap-2 transition-colors"
                     >
-                      {tag}
-                    </span>
-                  ))}
-                  {asset.tags.length > 4 && (
-                    <span className="px-2 py-0.5 text-gray-600 text-xs">
-                      +{asset.tags.length - 4}
-                    </span>
+                      <Download className="w-3 h-3" />
+                      Download GLB
+                    </button>
                   )}
                 </div>
-
-                <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
-                  <div className="flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3" />
-                    {asset.usage_count} uses
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(asset.created_at).toLocaleDateString()}
-                  </div>
-                </div>
-
-                {asset.file_url && asset.status === 'completed' && (
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      window.open(asset.file_url!, '_blank');
-                    }}
-                    className="w-full py-2 px-3 bg-teal-600 hover:bg-teal-500 text-white text-sm rounded-lg flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <Download className="w-3 h-3" />
-                    Download GLB
-                  </button>
-                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
+      )}
+
+      {selectedAsset && (
+        <AssetDetailPanel
+          asset={selectedAsset as any}
+          onClose={() => setSelectedAsset(null)}
+          onApply={(a) => {
+            onAssetSelect?.(a as any);
+            setSelectedAsset(null);
+          }}
+        />
       )}
     </div>
   );
