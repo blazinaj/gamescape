@@ -5,6 +5,8 @@ import { SavedMapTile } from '../services/SaveSystem';
 import { NPC } from '../components/NPC';
 import { Character } from '../components/Character';
 import { collisionSystem } from '../services/CollisionSystem';
+import { getMeshyMapAssetService, MeshyMapAssetService } from './MeshyMapAssetService';
+import { getGLBModelLoader } from './GLBModelLoader';
 
 export class MapManager {
   private scene: THREE.Scene;
@@ -13,7 +15,7 @@ export class MapManager {
   private loadedNPCs = new Map<string, NPC>();
   private isGenerating = new Set<string>();
   private tileSize = 25;
-  private loadDistance = 2; // Load tiles within 2 tiles of player
+  private loadDistance = 2;
   private hasCreatedStartingNPC = false;
   private character: Character | null = null;
   private callbacks: {
@@ -21,21 +23,23 @@ export class MapManager {
     onGenerationStart?: (x: number, z: number) => void;
     onNPCInteraction?: (npc: NPC) => void;
   } = {};
-  
-  // Track ALL generated tiles for saving, not just currently loaded ones
-  private allGeneratedTiles = new Map<string, MapTile>();
 
-  // Terrain collision objects
-  private terrainCollisionObjects = new Map<string, string[]>(); // tile_id -> collision_object_ids
-  private objectMeshCache = new Map<string, THREE.Object3D>(); // For reusing similar objects
-  
-  // Custom vegetation and structures
+  private allGeneratedTiles = new Map<string, MapTile>();
+  private terrainCollisionObjects = new Map<string, string[]>();
+  private objectMeshCache = new Map<string, THREE.Object3D>();
+
   private customVegetation: any[] = [];
   private customStructures: any[] = [];
+
+  private meshyAssetService: MeshyMapAssetService;
+  private glbAssetUrls: Map<string, string> = new Map();
+  private checkedObjectTypes: Set<string> = new Set();
+  private currentTheme: string = 'default';
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.aiGenerator = new AIMapGenerator();
+    this.meshyAssetService = getMeshyMapAssetService();
   }
 
   setCharacter(character: Character): void {
@@ -46,10 +50,37 @@ export class MapManager {
     this.callbacks = callbacks;
   }
 
-  // Set scenario for map generation
   setScenario(prompt: string, theme: string): void {
     this.aiGenerator.setScenario(prompt, theme);
+    this.currentTheme = theme;
+    this.preloadMeshyAssets();
     console.log(`🌍 Map manager using scenario theme: ${theme}`);
+  }
+
+  private async preloadMeshyAssets(): Promise<void> {
+    const commonTypes = ['tree', 'rock', 'building', 'bush', 'chest'];
+    for (const objectType of commonTypes) {
+      this.checkAndCacheAsset(objectType);
+    }
+  }
+
+  private async checkAndCacheAsset(objectType: string): Promise<void> {
+    const cacheKey = `${objectType}:${this.currentTheme}`;
+    if (this.checkedObjectTypes.has(cacheKey)) return;
+    this.checkedObjectTypes.add(cacheKey);
+
+    try {
+      const result = await this.meshyAssetService.findAssetForObjectType(objectType, this.currentTheme);
+      if (result.found && result.glbUrl) {
+        this.glbAssetUrls.set(objectType, result.glbUrl);
+        const loader = getGLBModelLoader();
+        loader.load(result.glbUrl).catch(() => {});
+      } else {
+        this.meshyAssetService.requestAssetGeneration(objectType, this.currentTheme).catch(() => {});
+      }
+    } catch {
+      // Silently continue with procedural fallback
+    }
   }
   
   // Register custom vegetation for world generation
@@ -480,8 +511,36 @@ export class MapManager {
 
   private createObjectMesh(obj: MapObject, biome: string, index: number): THREE.Object3D | null {
     const cacheKey = `${obj.type}_${biome}_${obj.scale.x}_${obj.scale.y}_${obj.scale.z}`;
-    
-    // Check cache for similar objects
+
+    const glbUrl = this.glbAssetUrls.get(obj.type);
+    if (glbUrl) {
+      const loader = getGLBModelLoader();
+      if (loader.isLoaded(glbUrl)) {
+        const clone = loader.clone(glbUrl);
+        if (clone) {
+          const box = new THREE.Box3().setFromObject(clone);
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const targetSizes: Record<string, number> = {
+            tree: 4.0, rock: 1.0, building: 3.0, chest: 0.6,
+            ruins: 2.0, bush: 1.0, mushroom: 0.4, crystal: 1.5,
+            well: 2.0, campfire: 0.8, statue: 2.0, fence: 1.0,
+            cart: 1.2, log: 2.0, crate: 0.6,
+          };
+          const targetSize = targetSizes[obj.type] || 1.0;
+          const s = targetSize / (maxDim || 1);
+          clone.scale.set(s * obj.scale.x, s * obj.scale.y, s * obj.scale.z);
+          clone.position.set(obj.position.x, obj.position.y, obj.position.z);
+          clone.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+          return clone;
+        }
+      }
+    }
+
+    if (!this.checkedObjectTypes.has(`${obj.type}:${this.currentTheme}`)) {
+      this.checkAndCacheAsset(obj.type);
+    }
+
     if (this.objectMeshCache.has(cacheKey) && Math.random() < 0.3) {
       const cachedMesh = this.objectMeshCache.get(cacheKey)!;
       const clonedMesh = cachedMesh.clone();
@@ -1413,8 +1472,10 @@ export class MapManager {
     // Clear generation state
     this.isGenerating.clear();
     
-    // Clear caches (but preserve tile data for potential reload)
     this.objectMeshCache.clear();
+    this.glbAssetUrls.clear();
+    this.checkedObjectTypes.clear();
+    this.meshyAssetService.clearCache();
 
     // Clear interactable objects
     if (this.character) {

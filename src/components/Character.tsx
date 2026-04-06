@@ -340,12 +340,14 @@ export class Character {
     return this.characterAnimations.isAttacking;
   }
 
-  // Getter for mesh (for camera and scene operations)
   get mesh(): THREE.Group {
     return this.characterMesh.mesh;
   }
 
-  // Cleanup
+  getCharacterMesh(): CharacterMesh {
+    return this.characterMesh;
+  }
+
   dispose(): void {
     this.characterCollision.dispose();
   }

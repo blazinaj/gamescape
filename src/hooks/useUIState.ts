@@ -13,17 +13,19 @@ export const useUIState = () => {
   const [showExperience, setShowExperience] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showObjectManager, setShowObjectManager] = useState(false);
+  const [showCharacterGenerator, setShowCharacterGenerator] = useState(false);
 
-  const isUIActive = activeConversation !== null || 
-                    activeObjectInteraction !== null || 
-                    showSaveUI || 
-                    showLogViewer || 
-                    showInventory || 
-                    showCharacterCustomizer || 
+  const isUIActive = activeConversation !== null ||
+                    activeObjectInteraction !== null ||
+                    showSaveUI ||
+                    showLogViewer ||
+                    showInventory ||
+                    showCharacterCustomizer ||
                     showKeybindings ||
                     showExperience ||
                     showSettings ||
-                    showObjectManager;
+                    showObjectManager ||
+                    showCharacterGenerator;
 
   const closeAllUI = () => {
     setActiveConversation(null);
@@ -36,6 +38,7 @@ export const useUIState = () => {
     setShowExperience(false);
     setShowSettings(false);
     setShowObjectManager(false);
+    setShowCharacterGenerator(false);
   };
 
   return {
@@ -59,6 +62,8 @@ export const useUIState = () => {
     setShowSettings,
     showObjectManager,
     setShowObjectManager,
+    showCharacterGenerator,
+    setShowCharacterGenerator,
     isUIActive,
     closeAllUI,
   };

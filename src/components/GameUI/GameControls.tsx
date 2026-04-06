@@ -1,9 +1,10 @@
 import React from 'react';
-import { Package, Terminal, Home, User, Keyboard, TrendingUp, Save, CheckCircle, XCircle, Loader2, Clock, Settings, Box } from 'lucide-react';
+import { Package, Terminal, Home, User, Keyboard, TrendingUp, Save, CheckCircle, XCircle, Loader2, Clock, Settings, Box, Wand2 } from 'lucide-react';
 import { AutoSaveState } from '../../hooks/useAutoSave';
 
 interface GameControlsProps {
   onShowCharacterCustomizer: () => void;
+  onShowCharacterGenerator: () => void;
   onShowInventory: () => void;
   onShowKeybindings: () => void;
   onShowExperience: () => void;
@@ -18,6 +19,7 @@ interface GameControlsProps {
 
 export const GameControls: React.FC<GameControlsProps> = ({
   onShowCharacterCustomizer,
+  onShowCharacterGenerator,
   onShowInventory,
   onShowKeybindings,
   onShowExperience,
@@ -86,6 +88,16 @@ export const GameControls: React.FC<GameControlsProps> = ({
             {customObjectCount}
           </div>
         )}
+      </button>
+      <button
+        onClick={onShowCharacterGenerator}
+        className="bg-black bg-opacity-50 text-white p-2 rounded-lg backdrop-blur-sm hover:bg-opacity-70 transition-all relative group"
+        title="AI Character Generator"
+      >
+        <Wand2 className="w-5 h-5" />
+        <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] text-blue-300 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+          AI
+        </span>
       </button>
       <button
         onClick={onShowCharacterCustomizer}

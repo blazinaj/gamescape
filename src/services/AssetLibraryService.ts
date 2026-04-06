@@ -1,4 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@^2.101.1';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { supabase as defaultClient } from '../lib/supabase';
 
 export interface Asset {
   id: string;
@@ -32,7 +33,11 @@ export interface AssetGeneration {
 }
 
 export class AssetLibraryService {
-  constructor(private supabase: ReturnType<typeof createClient>) {}
+  private supabase: SupabaseClient;
+
+  constructor(client?: SupabaseClient) {
+    this.supabase = client || defaultClient;
+  }
 
   async createAsset(
     assetType: 'model' | 'animation' | 'texture',

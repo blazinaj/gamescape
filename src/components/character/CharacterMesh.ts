@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CharacterCustomization, DEFAULT_CUSTOMIZATION } from '../../types/CharacterTypes';
+import { getGLBModelLoader } from '../../services/GLBModelLoader';
 
 export interface CharacterParts {
   body?: THREE.Mesh;
@@ -18,22 +19,86 @@ export class CharacterMesh {
   public leftArm: THREE.Group | null = null;
   public rightLeg: THREE.Group | null = null;
   public leftLeg: THREE.Group | null = null;
-  
+
   private characterParts: CharacterParts = {};
   private customization: CharacterCustomization = DEFAULT_CUSTOMIZATION;
   private textures: Map<string, THREE.Texture> = new Map();
+  private isUsingGLB = false;
+  private glbModel: THREE.Group | null = null;
+  private mixer: THREE.AnimationMixer | null = null;
 
   constructor(customization?: CharacterCustomization) {
     this.mesh = new THREE.Group();
-    
+
     if (customization) {
       this.customization = customization;
     }
-    
+
     this.preloadTextures();
     this.createCharacterMesh();
+    this.alignMeshToGround();
+  }
 
-    // Adjust the entire mesh group so feet are at ground level (y=0)
+  async loadGLBModel(url: string): Promise<boolean> {
+    try {
+      const loader = getGLBModelLoader();
+      const { scene, animations } = await loader.load(url);
+
+      const box = new THREE.Box3().setFromObject(scene);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const targetHeight = 2.0 * this.customization.scale;
+      const normalizeScale = targetHeight / maxDim;
+
+      scene.scale.setScalar(normalizeScale);
+
+      const scaledBox = new THREE.Box3().setFromObject(scene);
+      scene.position.y = -scaledBox.min.y;
+
+      this.mesh.clear();
+      this.characterParts = {};
+      this.rightArm = null;
+      this.leftArm = null;
+      this.rightLeg = null;
+      this.leftLeg = null;
+
+      this.glbModel = scene;
+      this.mesh.add(scene);
+      this.isUsingGLB = true;
+
+      if (animations.length > 0) {
+        this.mixer = new THREE.AnimationMixer(scene);
+        const idleClip = animations.find(c =>
+          c.name.toLowerCase().includes('idle')
+        ) || animations[0];
+        this.mixer.clipAction(idleClip).play();
+      }
+
+      console.log('Loaded GLB character model from:', url);
+      return true;
+    } catch (e) {
+      console.warn('Failed to load GLB character model:', e);
+      return false;
+    }
+  }
+
+  getIsUsingGLB(): boolean {
+    return this.isUsingGLB;
+  }
+
+  getMixer(): THREE.AnimationMixer | null {
+    return this.mixer;
+  }
+
+  revertToProcedural(): void {
+    if (!this.isUsingGLB) return;
+
+    this.mesh.clear();
+    this.glbModel = null;
+    this.mixer = null;
+    this.isUsingGLB = false;
+    this.characterParts = {};
+    this.createCharacterMesh();
     this.alignMeshToGround();
   }
 
@@ -68,13 +133,12 @@ export class CharacterMesh {
 
   updateCustomization(customization: CharacterCustomization): void {
     this.customization = customization;
-    
-    // Clear existing mesh and recreate with new customization
+
+    if (this.isUsingGLB) return;
+
     this.mesh.clear();
     this.characterParts = {};
     this.createCharacterMesh();
-
-    // Realign after customization update
     this.alignMeshToGround();
   }
 

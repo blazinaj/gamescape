@@ -7,26 +7,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-interface GenerateModelRequest {
+interface GenerateRequest {
+  action: string;
   prompt: string;
   art_style?: string;
+  asset_category?: string;
   user_id?: string;
   name?: string;
   description?: string;
   tags?: string[];
 }
 
-interface TaskStatus {
-  taskId: string;
+interface CheckStatusRequest {
+  action: string;
   meshyRequestId: string;
+}
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -35,191 +41,202 @@ Deno.serve(async (req: Request) => {
     const meshyApiKey = Deno.env.get("MESHY_API_KEY");
 
     if (!supabaseUrl || !supabaseServiceKey || !meshyApiKey) {
-      return new Response(
-        JSON.stringify({ error: "Missing environment variables" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Missing environment variables" }, 500);
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const url = new URL(req.url);
-    const pathname = url.pathname;
 
-    // Generate character model endpoint
-    if (pathname === "/functions/v1/meshy-asset-generator/generate-model" && req.method === "POST") {
-      const body: GenerateModelRequest = await req.json();
-      const { prompt, art_style, user_id, name, description, tags } = body;
-
-      if (!prompt) {
-        return new Response(
-          JSON.stringify({ error: "Prompt is required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Call Meshy API to generate model
-      const meshyResponse = await fetch("https://api.meshy.ai/v2/text-to-3d", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${meshyApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mode: "preview",
-          prompt: `A detailed 3D character model. ${prompt}. Game-ready, optimized for real-time rendering.`,
-          art_style: art_style || "realistic",
-          negative_prompt: "low quality, blurry, distorted",
-        }),
-      });
-
-      if (!meshyResponse.ok) {
-        const error = await meshyResponse.json();
-        return new Response(
-          JSON.stringify({ error: `Meshy API error: ${error.message}` }),
-          { status: meshyResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const meshyData = await meshyResponse.json();
-
-      // Create asset record in database
-      const assetName = name || `Generated Character - ${new Date().toISOString().slice(0, 10)}`;
-
-      const { data: asset, error: assetError } = await supabase
-        .from("asset_library")
-        .insert([
-          {
-            asset_type: "model",
-            content_type: "gltf",
-            name: assetName,
-            description: description || null,
-            prompt,
-            meshy_request_id: meshyData.id,
-            generated_by_user_id: user_id || null,
-            status: "pending",
-            tags: tags || ["character", "generated"],
-            metadata: {
-              art_style,
-              model_type: "character",
-            },
-          },
-        ])
-        .select()
-        .single();
-
-      if (assetError) {
-        return new Response(
-          JSON.stringify({ error: `Database error: ${assetError.message}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Create generation log
-      if (user_id) {
-        await supabase
-          .from("asset_generations")
-          .insert([
-            {
-              user_id,
-              asset_id: asset.id,
-              prompt,
-              meshy_request_id: meshyData.id,
-              status: "pending",
-            },
-          ]);
-      }
-
-      // Schedule async polling for completion
-      scheduleTaskPolling(meshyApiKey, asset.id, meshyData.id, supabaseUrl, supabaseServiceKey);
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          asset_id: asset.id,
-          meshy_request_id: meshyData.id,
-          message: "Asset generation started. Polling for completion in background.",
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (req.method !== "POST") {
+      return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
-    // Check task status endpoint
-    if (pathname === "/functions/v1/meshy-asset-generator/check-status" && req.method === "POST") {
-      const body: TaskStatus = await req.json();
-      const { meshyRequestId } = body;
+    const body = await req.json();
+    const action = body.action || detectAction(req.url);
 
-      if (!meshyRequestId) {
-        return new Response(
-          JSON.stringify({ error: "meshyRequestId is required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Check status from Meshy
-      const meshyResponse = await fetch(`https://api.meshy.ai/v2/text-to-3d/${meshyRequestId}`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${meshyApiKey}`,
-        },
-      });
-
-      if (!meshyResponse.ok) {
-        return new Response(
-          JSON.stringify({ error: "Failed to check task status" }),
-          { status: meshyResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const meshyStatus = await meshyResponse.json();
-
-      return new Response(
-        JSON.stringify({
-          status: meshyStatus.status,
-          model_urls: meshyStatus.model_urls,
-          error: meshyStatus.error,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    switch (action) {
+      case "generate-model":
+        return await handleGenerateModel(body as GenerateRequest, meshyApiKey, supabase);
+      case "check-status":
+        return await handleCheckStatus(body as CheckStatusRequest, meshyApiKey);
+      case "list-assets":
+        return await handleListAssets(body, supabase);
+      default:
+        return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
-
-    return new Response(
-      JSON.stringify({ error: "Not found" }),
-      { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
   } catch (error) {
     console.error("Function error:", error);
-    return new Response(
-      JSON.stringify({ error: "Internal server error", details: String(error) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ error: "Internal server error", details: String(error) }, 500);
   }
 });
 
-async function scheduleTaskPolling(
+function detectAction(url: string): string {
+  if (url.includes("generate-model")) return "generate-model";
+  if (url.includes("check-status")) return "check-status";
+  if (url.includes("list-assets")) return "list-assets";
+  return "generate-model";
+}
+
+async function handleGenerateModel(
+  body: GenerateRequest,
+  meshyApiKey: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const { prompt, art_style, asset_category, user_id, name, description, tags } = body;
+
+  if (!prompt) {
+    return jsonResponse({ error: "Prompt is required" }, 400);
+  }
+
+  const isCharacter = asset_category === "character";
+  const promptPrefix = isCharacter
+    ? "A detailed 3D character model."
+    : "A detailed 3D game asset.";
+  const enhancedPrompt = `${promptPrefix} ${prompt}. Game-ready, optimized for real-time rendering.`;
+
+  const meshyResponse = await fetch("https://api.meshy.ai/v2/text-to-3d", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${meshyApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      mode: "preview",
+      prompt: enhancedPrompt,
+      art_style: art_style || "realistic",
+      negative_prompt: "low quality, blurry, distorted, broken geometry",
+    }),
+  });
+
+  if (!meshyResponse.ok) {
+    const error = await meshyResponse.json();
+    return jsonResponse(
+      { error: `Meshy API error: ${error.message || meshyResponse.statusText}` },
+      meshyResponse.status
+    );
+  }
+
+  const meshyData = await meshyResponse.json();
+
+  const assetName = name || `Generated ${asset_category || "asset"} - ${new Date().toISOString().slice(0, 10)}`;
+  const assetTags = tags || [asset_category || "model", "generated"];
+
+  const { data: asset, error: assetError } = await supabase
+    .from("asset_library")
+    .insert([{
+      asset_type: "model",
+      content_type: "gltf",
+      name: assetName,
+      description: description || null,
+      prompt,
+      meshy_request_id: meshyData.id,
+      generated_by_user_id: user_id || null,
+      status: "pending",
+      tags: assetTags,
+      metadata: {
+        art_style,
+        model_type: asset_category || "general",
+        enhanced_prompt: enhancedPrompt,
+      },
+    }])
+    .select()
+    .single();
+
+  if (assetError) {
+    return jsonResponse({ error: `Database error: ${assetError.message}` }, 500);
+  }
+
+  if (user_id) {
+    await supabase.from("asset_generations").insert([{
+      user_id,
+      asset_id: asset.id,
+      prompt,
+      meshy_request_id: meshyData.id,
+      status: "pending",
+    }]);
+  }
+
+  scheduleTaskPolling(meshyApiKey, asset.id, meshyData.id, supabase);
+
+  return jsonResponse({
+    success: true,
+    asset_id: asset.id,
+    meshy_request_id: meshyData.id,
+    asset_category: asset_category || "general",
+    message: "Asset generation started. Polling for completion in background.",
+  });
+}
+
+async function handleCheckStatus(body: CheckStatusRequest, meshyApiKey: string) {
+  const { meshyRequestId } = body;
+
+  if (!meshyRequestId) {
+    return jsonResponse({ error: "meshyRequestId is required" }, 400);
+  }
+
+  const meshyResponse = await fetch(`https://api.meshy.ai/v2/text-to-3d/${meshyRequestId}`, {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${meshyApiKey}` },
+  });
+
+  if (!meshyResponse.ok) {
+    return jsonResponse({ error: "Failed to check task status" }, meshyResponse.status);
+  }
+
+  const meshyStatus = await meshyResponse.json();
+
+  return jsonResponse({
+    status: meshyStatus.status,
+    model_urls: meshyStatus.model_urls,
+    thumbnail_url: meshyStatus.thumbnail_url,
+    error: meshyStatus.error,
+  });
+}
+
+async function handleListAssets(
+  body: { asset_type?: string; tags?: string[]; limit?: number },
+  supabase: ReturnType<typeof createClient>
+) {
+  let query = supabase
+    .from("asset_library")
+    .select("*")
+    .eq("status", "completed")
+    .order("usage_count", { ascending: false });
+
+  if (body.asset_type) {
+    query = query.eq("asset_type", body.asset_type);
+  }
+  if (body.tags && body.tags.length > 0) {
+    query = query.contains("tags", body.tags);
+  }
+
+  const { data, error } = await query.limit(body.limit || 20);
+
+  if (error) {
+    return jsonResponse({ error: error.message }, 500);
+  }
+
+  return jsonResponse({ assets: data || [] });
+}
+
+function scheduleTaskPolling(
   meshyApiKey: string,
   assetId: string,
   meshyRequestId: string,
-  supabaseUrl: string,
-  supabaseServiceKey: string
+  supabase: ReturnType<typeof createClient>
 ) {
   EdgeRuntime.waitUntil(
     (async () => {
-      const supabase = createClient(supabaseUrl, supabaseServiceKey);
-      const maxAttempts = 600; // 30 minutes with 3-second intervals
+      const maxAttempts = 600;
       let attempts = 0;
 
       while (attempts < maxAttempts) {
         try {
-          // Check status with Meshy
           const response = await fetch(`https://api.meshy.ai/v2/text-to-3d/${meshyRequestId}`, {
             method: "GET",
-            headers: {
-              "Authorization": `Bearer ${meshyApiKey}`,
-            },
+            headers: { "Authorization": `Bearer ${meshyApiKey}` },
           });
 
           if (!response.ok) {
-            console.error(`Failed to check task status: ${response.statusText}`);
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 3000));
             continue;
@@ -228,27 +245,26 @@ async function scheduleTaskPolling(
           const taskStatus = await response.json();
 
           if (taskStatus.status === "SUCCEEDED") {
-            // Update asset with completion data
             const glbUrl = taskStatus.model_urls?.glb;
             await supabase
               .from("asset_library")
               .update({
                 status: "completed",
                 file_url: glbUrl,
-                preview_url: taskStatus.model_urls?.fbx || glbUrl,
+                preview_url: taskStatus.thumbnail_url || taskStatus.model_urls?.fbx || glbUrl,
                 updated_at: new Date().toISOString(),
                 metadata: {
-                  model_type: "character",
+                  model_type: "generated",
                   formats: {
                     glb: taskStatus.model_urls?.glb,
                     fbx: taskStatus.model_urls?.fbx,
                     usdz: taskStatus.model_urls?.usdz,
                   },
+                  thumbnail_url: taskStatus.thumbnail_url,
                 },
               })
               .eq("id", assetId);
 
-            // Update generation log
             await supabase
               .from("asset_generations")
               .update({
@@ -262,7 +278,6 @@ async function scheduleTaskPolling(
           }
 
           if (taskStatus.status === "FAILED") {
-            // Update asset with failure
             await supabase
               .from("asset_library")
               .update({
@@ -271,7 +286,6 @@ async function scheduleTaskPolling(
               })
               .eq("id", assetId);
 
-            // Update generation log
             await supabase
               .from("asset_generations")
               .update({
@@ -285,7 +299,6 @@ async function scheduleTaskPolling(
             return;
           }
 
-          // Still pending
           attempts++;
           await new Promise(resolve => setTimeout(resolve, 3000));
         } catch (error) {
@@ -295,7 +308,6 @@ async function scheduleTaskPolling(
         }
       }
 
-      // Timeout reached
       console.error(`Task polling timeout for asset ${assetId}`);
     })()
   );

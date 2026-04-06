@@ -1,12 +1,9 @@
-import { AssetLibraryService } from './AssetLibraryService';
-import { createClient } from 'npm:@supabase/supabase-js@^2.101.1';
+import { AssetLibraryService, Asset } from './AssetLibraryService';
 
 export interface CharacterGenerationRequest {
   description: string;
   artStyle?: 'realistic' | 'stylized' | 'cartoon' | 'anime';
   userId?: string;
-  generateTextures?: boolean;
-  generateRigging?: boolean;
 }
 
 export interface GeneratedCharacter {
@@ -20,22 +17,18 @@ export interface GeneratedCharacter {
 
 export class CharacterGenerationService {
   private assetLibrary: AssetLibraryService;
-  private supabase: ReturnType<typeof createClient>;
 
-  constructor(supabaseUrl: string, supabaseKey: string) {
-    this.supabase = createClient(supabaseUrl, supabaseKey);
-    this.assetLibrary = new AssetLibraryService(this.supabase);
+  constructor() {
+    this.assetLibrary = new AssetLibraryService();
   }
 
   async generateCharacter(
     request: CharacterGenerationRequest
   ): Promise<GeneratedCharacter> {
-    const { description, artStyle, userId, generateTextures, generateRigging } = request;
+    const { description, artStyle, userId } = request;
 
-    // Check if similar character exists in library
     const existingAsset = await this.findExistingCharacter(description, artStyle);
     if (existingAsset) {
-      await this.assetLibrary.incrementAssetUsage(existingAsset.id);
       return {
         assetId: existingAsset.id,
         meshyRequestId: existingAsset.meshy_request_id,
@@ -45,8 +38,7 @@ export class CharacterGenerationService {
       };
     }
 
-    // Generate new character
-    const edgeFunctionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meshy-asset-generator/generate-model`;
+    const edgeFunctionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meshy-asset-generator`;
 
     const response = await fetch(edgeFunctionUrl, {
       method: 'POST',
@@ -55,11 +47,13 @@ export class CharacterGenerationService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        action: 'generate-model',
         prompt: description,
         art_style: artStyle || 'realistic',
+        asset_category: 'character',
         user_id: userId,
         name: `Character: ${description.substring(0, 50)}`,
-        description: `AI-generated character from prompt: ${description}`,
+        description: `AI-generated character: ${description}`,
         tags: ['character', artStyle || 'realistic', 'player-generated'],
       }),
     });
@@ -82,22 +76,23 @@ export class CharacterGenerationService {
   private async findExistingCharacter(
     description: string,
     artStyle?: string
-  ): Promise<any | null> {
-    const tags = [artStyle || 'realistic', 'character'];
-
-    // First try exact tag match
-    const similar = await this.assetLibrary.findSimilarAssets('model', tags, 1);
-    if (similar.length > 0) {
-      return similar[0];
-    }
-
-    // Then search by description keywords
-    const keywords = description.split(' ').filter(word => word.length > 3);
-    for (const keyword of keywords) {
-      const results = await this.assetLibrary.searchAssets(keyword, 'model');
-      if (results.length > 0) {
-        return results[0];
+  ): Promise<Asset | null> {
+    try {
+      const tags = [artStyle || 'realistic', 'character'];
+      const similar = await this.assetLibrary.findSimilarAssets('model', tags, 1);
+      if (similar.length > 0) {
+        return similar[0];
       }
+
+      const keywords = description.split(' ').filter(word => word.length > 3);
+      for (const keyword of keywords.slice(0, 3)) {
+        const results = await this.assetLibrary.searchAssets(keyword, 'model');
+        if (results.length > 0) {
+          return results[0];
+        }
+      }
+    } catch (e) {
+      console.warn('Error searching existing characters:', e);
     }
 
     return null;
@@ -119,41 +114,19 @@ export class CharacterGenerationService {
     };
   }
 
-  async getCharacterAsset(assetId: string) {
-    return this.assetLibrary.getAsset(assetId);
-  }
-
-  async listAvailableCharacters(limit: number = 20) {
+  async listAvailableCharacters(limit: number = 20): Promise<Asset[]> {
     const characters = await this.assetLibrary.getAssetsByType('model');
-    return characters.slice(0, limit);
-  }
-
-  async searchCharacters(query: string, limit: number = 20) {
-    const results = await this.assetLibrary.searchAssets(query, 'model');
-    return results.slice(0, limit);
-  }
-
-  async getCharactersByStyle(style: string, limit: number = 20) {
-    const characters = await this.assetLibrary.getAssetsByTag(style);
-    return characters.slice(0, limit);
+    return characters
+      .filter(a => a.tags?.includes('character'))
+      .slice(0, limit);
   }
 }
 
-let characterGenerationService: CharacterGenerationService | null = null;
-
-export const initializeCharacterGeneration = (
-  supabaseUrl: string,
-  supabaseKey: string
-): CharacterGenerationService => {
-  if (!characterGenerationService) {
-    characterGenerationService = new CharacterGenerationService(supabaseUrl, supabaseKey);
-  }
-  return characterGenerationService;
-};
+let instance: CharacterGenerationService | null = null;
 
 export const getCharacterGenerationService = (): CharacterGenerationService => {
-  if (!characterGenerationService) {
-    throw new Error('CharacterGenerationService not initialized');
+  if (!instance) {
+    instance = new CharacterGenerationService();
   }
-  return characterGenerationService;
+  return instance;
 };

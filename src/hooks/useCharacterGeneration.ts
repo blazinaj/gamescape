@@ -33,8 +33,7 @@ export const useCharacterGeneration = () => {
           throw new Error('Supabase configuration missing');
         }
 
-        // For now, use local storage since we're not using Supabase in the frontend
-        const edgeFunctionUrl = `${supabaseUrl}/functions/v1/meshy-asset-generator/generate-model`;
+        const edgeFunctionUrl = `${supabaseUrl}/functions/v1/meshy-asset-generator`;
 
         const response = await fetch(edgeFunctionUrl, {
           method: 'POST',
@@ -43,8 +42,10 @@ export const useCharacterGeneration = () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            action: 'generate-model',
             prompt: request.description,
             art_style: request.artStyle || 'realistic',
+            asset_category: 'character',
             user_id: request.userId,
             name: `Character: ${request.description.substring(0, 50)}`,
             description: `AI-generated character from prompt: ${request.description}`,
@@ -68,11 +69,10 @@ export const useCharacterGeneration = () => {
         setState(prev => ({
           ...prev,
           character,
-          generating: true, // Keep true - we're polling
+          generating: true,
           progress: 'generating',
         }));
 
-        // Start polling for completion
         pollForCompletion(character.meshyRequestId, setState);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -106,8 +106,8 @@ export const useCharacterGeneration = () => {
 async function pollForCompletion(
   meshyRequestId: string,
   setState: React.Dispatch<React.SetStateAction<UseCharacterGenerationState>>,
-  maxAttempts: number = 40, // 2 minutes with 3-second intervals
-  interval: number = 3000
+  maxAttempts: number = 60,
+  interval: number = 5000
 ) {
   let attempts = 0;
 
@@ -117,14 +117,17 @@ async function pollForCompletion(
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
       const response = await fetch(
-        `${supabaseUrl}/functions/v1/meshy-asset-generator/check-status`,
+        `${supabaseUrl}/functions/v1/meshy-asset-generator`,
         {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${supabaseKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ meshyRequestId }),
+          body: JSON.stringify({
+            action: 'check-status',
+            meshyRequestId,
+          }),
         }
       );
 
@@ -142,7 +145,7 @@ async function pollForCompletion(
                 ...prev.character,
                 status: 'completed',
                 modelUrl: data.model_urls?.glb,
-                previewUrl: data.model_urls?.fbx || data.model_urls?.glb,
+                previewUrl: data.thumbnail_url || data.model_urls?.glb,
               }
             : null,
           generating: false,
@@ -163,7 +166,7 @@ async function pollForCompletion(
 
       return false;
     } catch (error) {
-      console.error('Error checking generation status:', error);
+      console.warn('Error checking generation status:', error);
       return false;
     }
   };
@@ -176,7 +179,6 @@ async function pollForCompletion(
     await new Promise(resolve => setTimeout(resolve, interval));
   }
 
-  // Timeout - still polling on backend, but inform user
   setState(prev => ({
     ...prev,
     error: 'Generation is taking longer than expected. Check back in a few minutes.',

@@ -31,6 +31,7 @@ import * as THREE from 'three';
 import { CollisionSystem } from '../services/CollisionSystem';
 import { GameScenario } from './ScenarioSelector';
 import { ObjectManagerUI } from './ObjectManagerUI';
+import { CharacterGenerator } from './CharacterGenerator';
 
 interface Game3DProps {
   gameId?: string;
@@ -584,6 +585,7 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       {/* Game Controls with Auto-Save Status */}
       <GameControls
         onShowCharacterCustomizer={() => uiState.setShowCharacterCustomizer(true)}
+        onShowCharacterGenerator={() => uiState.setShowCharacterGenerator(true)}
         onShowInventory={() => uiState.setShowInventory(true)}
         onShowKeybindings={() => uiState.setShowKeybindings(true)}
         onShowExperience={() => uiState.setShowExperience(true)}
@@ -855,6 +857,20 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
         objectDefinitionSystem={gameRef.current.objectDefinitionSystem}
         customObjectGenerator={gameRef.current.customObjectGenerator}
         onApplyChanges={handleObjectManagerChanges}
+      />
+
+      <CharacterGenerator
+        isVisible={uiState.showCharacterGenerator}
+        onClose={() => uiState.setShowCharacterGenerator(false)}
+        onModelReady={(glbUrl: string) => {
+          if (gameRef.current.character) {
+            gameRef.current.character.getCharacterMesh().loadGLBModel(glbUrl).then(success => {
+              if (success) {
+                console.log('Applied AI-generated character model');
+              }
+            });
+          }
+        }}
       />
     </div>
   );
