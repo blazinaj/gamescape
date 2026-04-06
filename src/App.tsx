@@ -2,71 +2,84 @@ import React, { useState } from 'react';
 import { Game3D } from './components/Game3D';
 import { MainMenu } from './components/MainMenu';
 import { GameStore } from './components/GameStore';
-import { DeveloperPortal } from './components/DeveloperPortal';
+import { CreateWorldForm } from './components/CreateWorldForm';
 import { AppMode } from './types/AppTypes';
 import { useAuth } from './hooks/useAuth';
 import { useProfile } from './hooks/useProfile';
+import { GameScenario } from './components/ScenarioSelector';
 
 function App() {
   const { user, loading: authLoading } = useAuth();
-  const { profile, loading: profileLoading } = useProfile();
-  const [appMode, setAppMode] = useState<AppMode>('store');
+  const { loading: profileLoading } = useProfile();
+  const [appMode, setAppMode] = useState<AppMode>('home');
   const [currentGameId, setCurrentGameId] = useState<string | null>(null);
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [currentScenario, setCurrentScenario] = useState<GameScenario | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const handleNavigateToStore = () => {
-    setAppMode('store');
+  const handleNavigateToHome = () => {
+    setAppMode('home');
     setCurrentGameId(null);
-    setCurrentProjectId(null);
+    setCurrentScenario(null);
+  };
+
+  const handleNavigateToCreate = () => {
+    setAppMode('create');
   };
 
   const handleNavigateToPlay = (gameId: string) => {
     setCurrentGameId(gameId);
+    setCurrentScenario(null);
     setAppMode('play');
   };
 
-  const handleNavigateToDevelop = (projectId?: string) => {
-    setCurrentProjectId(projectId || null);
-    setAppMode('develop');
+  const handleCreateWorld = (name: string, scenario: GameScenario) => {
+    setIsCreating(true);
+    const namedScenario = { ...scenario, name };
+    setCurrentScenario(namedScenario);
+    setCurrentGameId(null);
+    setAppMode('play');
+    setIsCreating(false);
   };
 
-  const handleReturnToStore = () => {
+  const handleReturnToHome = () => {
     setCurrentGameId(null);
-    setCurrentProjectId(null);
-    setAppMode('store');
+    setCurrentScenario(null);
+    setAppMode('home');
   };
 
   if (authLoading || profileLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-        <div className="text-white text-xl">Loading Gamescape...</div>
+      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 to-slate-900">
+        <div className="text-center">
+          <div className="w-10 h-10 border-3 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-400 text-lg">Loading Gamescape...</p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
-    return (
-      <MainMenu onNavigate={handleNavigateToStore} />
-    );
+    return <MainMenu onNavigate={handleNavigateToHome} />;
   }
 
-  if (appMode === 'play' && currentGameId) {
+  if (appMode === 'play' && (currentGameId || currentScenario)) {
     return (
       <div className="w-full h-screen overflow-hidden">
         <Game3D
-          gameId={currentGameId}
-          onReturnToMenu={handleReturnToStore}
+          gameId={currentGameId || undefined}
+          scenario={currentScenario || undefined}
+          onReturnToMenu={handleReturnToHome}
         />
       </div>
     );
   }
 
-  if (appMode === 'develop') {
+  if (appMode === 'create') {
     return (
-      <DeveloperPortal
-        currentProjectId={currentProjectId}
-        onNavigateToStore={handleNavigateToStore}
-        onNavigateToPlay={handleNavigateToPlay}
+      <CreateWorldForm
+        onCreateWorld={handleCreateWorld}
+        onBack={handleNavigateToHome}
+        isCreating={isCreating}
       />
     );
   }
@@ -74,7 +87,7 @@ function App() {
   return (
     <GameStore
       onNavigateToPlay={handleNavigateToPlay}
-      onNavigateToDevelop={handleNavigateToDevelop}
+      onNavigateToCreate={handleNavigateToCreate}
     />
   );
 }
