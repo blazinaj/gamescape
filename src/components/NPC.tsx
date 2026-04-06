@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { NPCData } from '../types/MapTypes';
 import { collisionSystem } from '../services/CollisionSystem';
 import { CollisionObject } from '../types/CollisionTypes';
+import { findEntityAsset, loadEntityGLB } from '../services/EntityAssetResolver';
 
 export class NPC {
   public mesh: THREE.Group;
@@ -10,7 +11,8 @@ export class NPC {
   private collisionObject: CollisionObject;
   private interactionZone: CollisionObject;
   private lastInteractionTime: number = 0;
-  private interactionCooldown: number = 1000; // 1 second between interactions
+  private interactionCooldown: number = 1000;
+  private isUsingGLB = false;
 
   constructor(data: NPCData, position: THREE.Vector3) {
     this.data = data;
@@ -62,6 +64,39 @@ export class NPC {
     
     this.createNPCMesh();
     this.mesh.position.copy(position);
+    this.tryLoadGLBModel();
+  }
+
+  private async tryLoadGLBModel(): Promise<void> {
+    try {
+      const occupation = (this.data.occupation || 'villager').toLowerCase();
+      const result = await findEntityAsset(occupation, ['npc', occupation, 'character']);
+      if (!result.found || !result.glbUrl) return;
+
+      const targetHeight = this.data.appearance.scale * 1.8;
+      const glbScene = await loadEntityGLB(result.glbUrl, targetHeight);
+      if (!glbScene) return;
+
+      const savedPos = this.mesh.position.clone();
+      const savedRot = this.mesh.rotation.clone();
+
+      const sprites: THREE.Object3D[] = [];
+      this.mesh.children.forEach(child => {
+        if (child instanceof THREE.Sprite) sprites.push(child);
+      });
+
+      this.mesh.clear();
+      this.mesh.add(glbScene);
+      sprites.forEach(s => this.mesh.add(s));
+
+      this.mesh.position.copy(savedPos);
+      this.mesh.rotation.copy(savedRot);
+      this.mesh.scale.setScalar(this.data.appearance.scale);
+      this.isUsingGLB = true;
+
+      this.addNameLabel();
+      this.addOccupationLabel();
+    } catch { /* keep procedural mesh */ }
   }
 
   private createNPCMesh(): void {
@@ -196,27 +231,25 @@ export class NPC {
   }
 
   update(): void {
-    // Gentle idle animation
     const time = Date.now() * 0.003 + this.animationOffset;
     const bobAmount = 0.03;
-    
-    // Subtle position bobbing
+
     const baseY = this.mesh.position.y;
     this.mesh.position.y = baseY + Math.sin(time) * bobAmount;
 
-    // Gentle arm sway
-    const arms = [this.mesh.children[3], this.mesh.children[4]]; // left and right arms
-    if (arms[0] && arms[1]) {
-      const swayAmount = 0.1;
-      arms[0].rotation.z = Math.sin(time * 0.7) * swayAmount + 0.1;
-      arms[1].rotation.z = -Math.sin(time * 0.7) * swayAmount - 0.1;
-    }
+    if (!this.isUsingGLB) {
+      const arms = [this.mesh.children[3], this.mesh.children[4]];
+      if (arms[0] && arms[1]) {
+        const swayAmount = 0.1;
+        arms[0].rotation.z = Math.sin(time * 0.7) * swayAmount + 0.1;
+        arms[1].rotation.z = -Math.sin(time * 0.7) * swayAmount - 0.1;
+      }
 
-    // Gentle head movement (looking around)
-    const head = this.mesh.children[1]; // head
-    if (head) {
-      head.rotation.y = Math.sin(time * 0.3) * 0.2;
-      head.rotation.x = Math.sin(time * 0.5) * 0.1;
+      const head = this.mesh.children[1];
+      if (head) {
+        head.rotation.y = Math.sin(time * 0.3) * 0.2;
+        head.rotation.x = Math.sin(time * 0.5) * 0.1;
+      }
     }
 
     // Update collision system position

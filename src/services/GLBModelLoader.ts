@@ -1,6 +1,19 @@
 import * as THREE from 'three';
 import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
+const PROXY_HOSTS = ['assets.meshy.ai', 'api.meshy.ai'];
+const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/model-proxy`;
+
+export function proxyModelUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (PROXY_HOSTS.includes(parsed.hostname)) {
+      return `${PROXY_BASE}?url=${encodeURIComponent(url)}`;
+    }
+  } catch { /* not a valid URL */ }
+  return url;
+}
+
 interface CachedModel {
   scene: THREE.Group;
   animations: THREE.AnimationClip[];
@@ -34,9 +47,11 @@ export class GLBModelLoader {
       };
     }
 
+    const fetchUrl = proxyModelUrl(url);
+
     const loadPromise = new Promise<GLTF>((resolve, reject) => {
       this.loader.load(
-        url,
+        fetchUrl,
         (gltf) => resolve(gltf),
         undefined,
         (error) => reject(error)

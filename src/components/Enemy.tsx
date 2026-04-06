@@ -3,6 +3,7 @@ import { EnemyData, EnemyState } from '../types/EnemyTypes';
 import { HealthState, DamageInfo } from '../types/HealthTypes';
 import { collisionSystem } from '../services/CollisionSystem';
 import { CollisionObject } from '../types/CollisionTypes';
+import { findEntityAsset, loadEntityGLB } from '../services/EntityAssetResolver';
 
 export class Enemy {
   public mesh: THREE.Group;
@@ -107,6 +108,42 @@ export class Enemy {
 
     this.createEnemyMesh();
     this.mesh.position.copy(position);
+    this.tryLoadGLBModel();
+  }
+
+  private async tryLoadGLBModel(): Promise<void> {
+    try {
+      const result = await findEntityAsset(this.data.type, ['enemy', this.data.type]);
+      if (!result.found || !result.glbUrl) return;
+
+      const targetHeight = this.data.appearance.scale * 2.0;
+      const glbScene = await loadEntityGLB(result.glbUrl, targetHeight);
+      if (!glbScene || this.state.isDead) return;
+
+      const savedPos = this.mesh.position.clone();
+      const savedRot = this.mesh.rotation.clone();
+      const healthBar = this.mesh.userData.healthBar;
+      const healthBarMat = this.mesh.userData.healthBarMaterial;
+
+      const childrenToKeep: THREE.Object3D[] = [];
+      this.mesh.children.forEach(child => {
+        if (child === healthBar || child instanceof THREE.Sprite) {
+          childrenToKeep.push(child);
+        }
+      });
+
+      this.mesh.clear();
+      this.mesh.add(glbScene);
+      childrenToKeep.forEach(c => this.mesh.add(c));
+
+      this.mesh.position.copy(savedPos);
+      this.mesh.rotation.copy(savedRot);
+      this.mesh.userData.healthBar = healthBar;
+      this.mesh.userData.healthBarMaterial = healthBarMat;
+
+      this.addHealthBar();
+      this.addNameLabel();
+    } catch { /* keep procedural mesh */ }
   }
 
   private createEnemyMesh(): void {
