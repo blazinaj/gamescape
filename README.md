@@ -43,6 +43,9 @@ Gamescape operates in three integrated modes:
 ### Engine Features
 - **AI-Powered Generation** - Dynamic world creation using OpenAI GPT-4
 - **3D Rendering** - Real-time graphics with Three.js
+- **Meshy AI Integration** - Generate 3D characters, animations, and textures
+- **Asset Library** - Centralized storage for generated 3D assets
+- **Intelligent Caching** - Automatic asset reuse and deduplication
 - **Local Storage** - Browser-based data persistence
 - **Instant Setup** - No database configuration required
 - **Pre-loaded Content** - 5 sample games ready to play
@@ -51,9 +54,11 @@ Gamescape operates in three integrated modes:
 
 - **Frontend**: React 18 with TypeScript
 - **3D Rendering**: Three.js
+- **3D Generation**: Meshy AI for character/asset creation
+- **Backend**: Supabase (PostgreSQL + Edge Functions)
 - **Styling**: Tailwind CSS
-- **Data Storage**: Browser localStorage (no backend required)
-- **AI Integration**: OpenAI GPT-4 for content generation (optional)
+- **Data Storage**: Browser localStorage + Supabase Database
+- **AI Integration**: OpenAI GPT-4 + Meshy AI
 - **Build Tool**: Vite
 - **Icons**: Lucide React
 
