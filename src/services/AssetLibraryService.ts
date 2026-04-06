@@ -9,7 +9,7 @@ export interface Asset {
   description: string | null;
   prompt: string;
   generated_by_user_id: string | null;
-  meshy_request_id: string;
+  meshy_request_id: string | null;
   status: 'pending' | 'completed' | 'failed';
   metadata: Record<string, any>;
   file_url: string | null;
@@ -25,7 +25,7 @@ export interface AssetGeneration {
   asset_id: string | null;
   user_id: string;
   prompt: string;
-  meshy_request_id: string;
+  meshy_request_id: string | null;
   status: 'pending' | 'completed' | 'failed';
   error_message: string | null;
   created_at: string;
@@ -43,7 +43,7 @@ export class AssetLibraryService {
     assetType: 'model' | 'animation' | 'texture',
     name: string,
     prompt: string,
-    meshyRequestId: string,
+    meshyRequestId?: string,
     userId?: string,
     description?: string
   ): Promise<Asset> {
@@ -56,7 +56,7 @@ export class AssetLibraryService {
           name,
           description: description || null,
           prompt,
-          meshy_request_id: meshyRequestId,
+          meshy_request_id: meshyRequestId || null,
           generated_by_user_id: userId || null,
           status: 'pending',
           tags: [],
@@ -198,7 +198,7 @@ export class AssetLibraryService {
   async createGenerationLog(
     userId: string,
     prompt: string,
-    meshyRequestId: string,
+    meshyRequestId?: string,
     assetId?: string
   ): Promise<AssetGeneration> {
     const { data, error } = await this.supabase
@@ -208,7 +208,7 @@ export class AssetLibraryService {
           user_id: userId,
           asset_id: assetId || null,
           prompt,
-          meshy_request_id: meshyRequestId,
+          meshy_request_id: meshyRequestId || null,
           status: 'pending',
         },
       ])
