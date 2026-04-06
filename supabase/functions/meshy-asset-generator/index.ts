@@ -7,6 +7,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const MESHY_V1_BASE = "https://api.meshy.ai/openapi/v1";
+const MESHY_V2_BASE = "https://api.meshy.ai/v2";
+
+const GAME_ANIMATIONS: Record<string, number> = {
+  idle: 0,
+  walk: 1,
+  run: 13,
+  attack: 4,
+  death: 8,
+};
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -16,6 +27,13 @@ function jsonResponse(data: unknown, status = 200) {
 
 function extractTaskId(meshyData: Record<string, unknown>): string | null {
   return (meshyData.result as string) || (meshyData.id as string) || null;
+}
+
+function meshyHeaders(apiKey: string) {
+  return {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -52,6 +70,12 @@ Deno.serve(async (req: Request) => {
         return await handlePollAndUpdate(body, meshyApiKey, supabase);
       case "list-assets":
         return await handleListAssets(body, supabase);
+      case "rig-model":
+        return await handleRigModel(body, meshyApiKey, supabase);
+      case "check-rig-status":
+        return await handleCheckRigStatus(body, meshyApiKey, supabase);
+      case "check-animation-progress":
+        return await handleCheckAnimationProgress(body, supabase);
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
@@ -61,13 +85,10 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function callMeshyGenerate(meshyApiKey: string, prompt: string, artStyle: string) {
-  const response = await fetch("https://api.meshy.ai/v2/text-to-3d", {
+async function callMeshyGenerate(meshyApiKey: string, prompt: string, _artStyle: string) {
+  const response = await fetch(`${MESHY_V2_BASE}/text-to-3d`, {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${meshyApiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: meshyHeaders(meshyApiKey),
     body: JSON.stringify({
       mode: "preview",
       prompt,
@@ -161,7 +182,7 @@ async function handleGenerateModel(
     return jsonResponse({ error: `Database error: ${assetError.message}` }, 500);
   }
 
-  scheduleTaskPolling(meshyApiKey, asset.id, meshyResult.taskId, supabase);
+  scheduleModelPolling(meshyApiKey, asset.id, meshyResult.taskId, isCharacter, supabase);
 
   return jsonResponse({
     success: true,
@@ -269,7 +290,7 @@ async function handleSeedSingle(
     assetId = asset.id;
   }
 
-  scheduleTaskPolling(meshyApiKey, assetId, meshyResult.taskId, supabase);
+  scheduleModelPolling(meshyApiKey, assetId, meshyResult.taskId, false, supabase);
 
   return jsonResponse({
     success: true,
@@ -289,7 +310,7 @@ async function handlePollAndUpdate(
     return jsonResponse({ error: "asset_id and meshy_request_id required" }, 400);
   }
 
-  const response = await fetch(`https://api.meshy.ai/v2/text-to-3d/${meshy_request_id}`, {
+  const response = await fetch(`${MESHY_V2_BASE}/text-to-3d/${meshy_request_id}`, {
     method: "GET",
     headers: { "Authorization": `Bearer ${meshyApiKey}` },
   });
@@ -349,7 +370,7 @@ async function handleCheckStatus(
     return jsonResponse({ error: "meshyRequestId is required" }, 400);
   }
 
-  const response = await fetch(`https://api.meshy.ai/v2/text-to-3d/${meshyRequestId}`, {
+  const response = await fetch(`${MESHY_V2_BASE}/text-to-3d/${meshyRequestId}`, {
     method: "GET",
     headers: { "Authorization": `Bearer ${meshyApiKey}` },
   });
@@ -397,10 +418,202 @@ async function handleListAssets(
   return jsonResponse({ assets: data || [] });
 }
 
-function scheduleTaskPolling(
+async function handleRigModel(
+  body: { asset_id: string; model_url?: string },
+  meshyApiKey: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const { asset_id, model_url } = body;
+
+  if (!asset_id) {
+    return jsonResponse({ error: "asset_id is required" }, 400);
+  }
+
+  const { data: asset } = await supabase
+    .from("asset_library")
+    .select("*")
+    .eq("id", asset_id)
+    .maybeSingle();
+
+  if (!asset) {
+    return jsonResponse({ error: "Asset not found" }, 404);
+  }
+
+  const glbUrl = model_url || asset.file_url;
+  if (!glbUrl) {
+    return jsonResponse({ error: "No model URL available for rigging" }, 400);
+  }
+
+  const rigResponse = await fetch(`${MESHY_V1_BASE}/rigging`, {
+    method: "POST",
+    headers: meshyHeaders(meshyApiKey),
+    body: JSON.stringify({
+      model_url: glbUrl,
+      height_meters: 1.7,
+    }),
+  });
+
+  if (!rigResponse.ok) {
+    const errText = await rigResponse.text();
+    return jsonResponse({ error: `Rigging API error: ${errText}` }, rigResponse.status);
+  }
+
+  const rigData = await rigResponse.json();
+  const rigTaskId = rigData.result || rigData.id;
+
+  if (!rigTaskId) {
+    return jsonResponse({ error: "No rig task ID returned" }, 500);
+  }
+
+  const existingMetadata = asset.metadata || {};
+  await supabase
+    .from("asset_library")
+    .update({
+      updated_at: new Date().toISOString(),
+      metadata: {
+        ...existingMetadata,
+        rigging: {
+          task_id: rigTaskId,
+          status: "PENDING",
+          started_at: new Date().toISOString(),
+        },
+        animations: {},
+      },
+    })
+    .eq("id", asset_id);
+
+  scheduleRiggingPipeline(meshyApiKey, asset_id, rigTaskId, supabase);
+
+  return jsonResponse({
+    success: true,
+    asset_id,
+    rig_task_id: rigTaskId,
+    status: "rigging_started",
+  });
+}
+
+async function handleCheckRigStatus(
+  body: { asset_id: string; rig_task_id?: string },
+  meshyApiKey: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const { asset_id, rig_task_id } = body;
+
+  if (!rig_task_id && !asset_id) {
+    return jsonResponse({ error: "rig_task_id or asset_id required" }, 400);
+  }
+
+  let taskId = rig_task_id;
+
+  if (!taskId && asset_id) {
+    const { data: asset } = await supabase
+      .from("asset_library")
+      .select("metadata")
+      .eq("id", asset_id)
+      .maybeSingle();
+
+    taskId = asset?.metadata?.rigging?.task_id;
+    if (!taskId) {
+      return jsonResponse({ error: "No rigging task found for this asset" }, 404);
+    }
+  }
+
+  const response = await fetch(`${MESHY_V1_BASE}/rigging/${taskId}`, {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${meshyApiKey}` },
+  });
+
+  if (!response.ok) {
+    return jsonResponse({ error: "Failed to check rig status" }, response.status);
+  }
+
+  const rigStatus = await response.json();
+
+  return jsonResponse({
+    status: rigStatus.status,
+    progress: rigStatus.progress,
+    result: rigStatus.result,
+    error: rigStatus.task_error,
+  });
+}
+
+async function handleCheckAnimationProgress(
+  body: { asset_id: string },
+  supabase: ReturnType<typeof createClient>
+) {
+  const { asset_id } = body;
+
+  if (!asset_id) {
+    return jsonResponse({ error: "asset_id is required" }, 400);
+  }
+
+  const { data: asset } = await supabase
+    .from("asset_library")
+    .select("metadata")
+    .eq("id", asset_id)
+    .maybeSingle();
+
+  if (!asset) {
+    return jsonResponse({ error: "Asset not found" }, 404);
+  }
+
+  const metadata = asset.metadata || {};
+  const rigging = metadata.rigging || {};
+  const animations = metadata.animations || {};
+
+  const animationSummary: Record<string, { status: string; glb_url?: string }> = {};
+  let allComplete = true;
+  let anyFailed = false;
+
+  for (const [name, data] of Object.entries(animations) as [string, any][]) {
+    animationSummary[name] = {
+      status: data.status || "PENDING",
+      glb_url: data.glb_url,
+    };
+    if (data.status !== "SUCCEEDED") allComplete = false;
+    if (data.status === "FAILED") anyFailed = true;
+  }
+
+  const totalAnimations = Object.keys(GAME_ANIMATIONS).length;
+  const completedAnimations = Object.values(animations).filter(
+    (a: any) => a.status === "SUCCEEDED"
+  ).length;
+
+  let overallStatus = "pending";
+  if (rigging.status === "PENDING" || rigging.status === "IN_PROGRESS") {
+    overallStatus = "rigging";
+  } else if (rigging.status === "FAILED") {
+    overallStatus = "failed";
+  } else if (rigging.status === "SUCCEEDED" && completedAnimations === 0) {
+    overallStatus = "animating";
+  } else if (allComplete && completedAnimations === totalAnimations) {
+    overallStatus = "completed";
+  } else if (anyFailed && completedAnimations > 0) {
+    overallStatus = "partial";
+  } else {
+    overallStatus = "animating";
+  }
+
+  return jsonResponse({
+    asset_id,
+    overall_status: overallStatus,
+    rigging: {
+      status: rigging.status || "NOT_STARTED",
+      rigged_glb_url: rigging.rigged_glb_url,
+    },
+    animations: animationSummary,
+    progress: {
+      completed: completedAnimations,
+      total: totalAnimations,
+    },
+  });
+}
+
+function scheduleModelPolling(
   meshyApiKey: string,
   assetId: string,
   meshyRequestId: string,
+  isCharacter: boolean,
   supabase: ReturnType<typeof createClient>
 ) {
   EdgeRuntime.waitUntil(
@@ -413,7 +626,7 @@ function scheduleTaskPolling(
         attempts++;
 
         try {
-          const response = await fetch(`https://api.meshy.ai/v2/text-to-3d/${meshyRequestId}`, {
+          const response = await fetch(`${MESHY_V2_BASE}/text-to-3d/${meshyRequestId}`, {
             method: "GET",
             headers: { "Authorization": `Bearer ${meshyApiKey}` },
           });
@@ -444,6 +657,11 @@ function scheduleTaskPolling(
               .eq("id", assetId);
 
             console.log(`Asset ${assetId} completed`);
+
+            if (isCharacter && glbUrl) {
+              console.log(`Auto-rigging character asset ${assetId}`);
+              await startRiggingPipeline(meshyApiKey, assetId, glbUrl, supabase);
+            }
             return;
           }
 
@@ -467,4 +685,297 @@ function scheduleTaskPolling(
       console.error(`Polling timeout for ${assetId}`);
     })()
   );
+}
+
+async function startRiggingPipeline(
+  meshyApiKey: string,
+  assetId: string,
+  glbUrl: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  try {
+    const rigResponse = await fetch(`${MESHY_V1_BASE}/rigging`, {
+      method: "POST",
+      headers: meshyHeaders(meshyApiKey),
+      body: JSON.stringify({
+        model_url: glbUrl,
+        height_meters: 1.7,
+      }),
+    });
+
+    if (!rigResponse.ok) {
+      console.error(`Rigging request failed for ${assetId}: ${await rigResponse.text()}`);
+      await updateAssetMetadata(supabase, assetId, {
+        rigging: { status: "FAILED", error: "Rigging request failed" },
+      });
+      return;
+    }
+
+    const rigData = await rigResponse.json();
+    const rigTaskId = rigData.result || rigData.id;
+
+    if (!rigTaskId) {
+      console.error(`No rig task ID for ${assetId}`);
+      return;
+    }
+
+    await updateAssetMetadata(supabase, assetId, {
+      rigging: {
+        task_id: rigTaskId,
+        status: "PENDING",
+        started_at: new Date().toISOString(),
+      },
+      animations: {},
+    });
+
+    await pollRiggingAndAnimate(meshyApiKey, assetId, rigTaskId, supabase);
+  } catch (error) {
+    console.error(`startRiggingPipeline error for ${assetId}: ${error}`);
+  }
+}
+
+function scheduleRiggingPipeline(
+  meshyApiKey: string,
+  assetId: string,
+  rigTaskId: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  EdgeRuntime.waitUntil(
+    pollRiggingAndAnimate(meshyApiKey, assetId, rigTaskId, supabase)
+  );
+}
+
+async function pollRiggingAndAnimate(
+  meshyApiKey: string,
+  assetId: string,
+  rigTaskId: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const maxAttempts = 120;
+  let attempts = 0;
+
+  while (attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    attempts++;
+
+    try {
+      const response = await fetch(`${MESHY_V1_BASE}/rigging/${rigTaskId}`, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${meshyApiKey}` },
+      });
+
+      if (!response.ok) continue;
+
+      const rigStatus = await response.json();
+
+      if (rigStatus.status === "SUCCEEDED") {
+        const result = rigStatus.result || {};
+        await updateAssetMetadata(supabase, assetId, {
+          rigging: {
+            task_id: rigTaskId,
+            status: "SUCCEEDED",
+            rigged_glb_url: result.rigged_character_glb_url,
+            rigged_fbx_url: result.rigged_character_fbx_url,
+            basic_animations: result.basic_animations,
+            finished_at: new Date().toISOString(),
+          },
+        });
+
+        console.log(`Rigging completed for ${assetId}, starting animations`);
+        await startAnimationBatch(meshyApiKey, assetId, rigTaskId, supabase);
+        return;
+      }
+
+      if (rigStatus.status === "FAILED") {
+        await updateAssetMetadata(supabase, assetId, {
+          rigging: {
+            task_id: rigTaskId,
+            status: "FAILED",
+            error: rigStatus.task_error?.message || "Rigging failed",
+          },
+        });
+        console.log(`Rigging failed for ${assetId}`);
+        return;
+      }
+
+      await updateAssetMetadata(supabase, assetId, {
+        rigging: {
+          task_id: rigTaskId,
+          status: rigStatus.status,
+          progress: rigStatus.progress,
+        },
+      });
+    } catch (error) {
+      console.error(`Rig poll error for ${assetId}: ${error}`);
+    }
+  }
+
+  await updateAssetMetadata(supabase, assetId, {
+    rigging: { task_id: rigTaskId, status: "FAILED", error: "Polling timeout" },
+  });
+}
+
+async function startAnimationBatch(
+  meshyApiKey: string,
+  assetId: string,
+  rigTaskId: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const animationTasks: Record<string, string> = {};
+
+  for (const [name, actionId] of Object.entries(GAME_ANIMATIONS)) {
+    try {
+      const animResponse = await fetch(`${MESHY_V1_BASE}/animations`, {
+        method: "POST",
+        headers: meshyHeaders(meshyApiKey),
+        body: JSON.stringify({
+          rig_task_id: rigTaskId,
+          action_id: actionId,
+        }),
+      });
+
+      if (!animResponse.ok) {
+        const errText = await animResponse.text();
+        console.error(`Animation ${name} request failed: ${errText}`);
+        await updateAnimationStatus(supabase, assetId, name, {
+          status: "FAILED",
+          error: errText,
+          action_id: actionId,
+        });
+        continue;
+      }
+
+      const animData = await animResponse.json();
+      const animTaskId = animData.result || animData.id;
+
+      if (animTaskId) {
+        animationTasks[name] = animTaskId;
+        await updateAnimationStatus(supabase, assetId, name, {
+          task_id: animTaskId,
+          status: "PENDING",
+          action_id: actionId,
+          started_at: new Date().toISOString(),
+        });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (error) {
+      console.error(`Animation ${name} error: ${error}`);
+      await updateAnimationStatus(supabase, assetId, name, {
+        status: "FAILED",
+        error: String(error),
+        action_id: actionId,
+      });
+    }
+  }
+
+  for (const [name, taskId] of Object.entries(animationTasks)) {
+    await pollAnimationTask(meshyApiKey, assetId, name, taskId, supabase);
+  }
+
+  console.log(`All animation polling complete for ${assetId}`);
+}
+
+async function pollAnimationTask(
+  meshyApiKey: string,
+  assetId: string,
+  animName: string,
+  animTaskId: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const maxAttempts = 120;
+  let attempts = 0;
+
+  while (attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    attempts++;
+
+    try {
+      const response = await fetch(`${MESHY_V1_BASE}/animations/${animTaskId}`, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${meshyApiKey}` },
+      });
+
+      if (!response.ok) continue;
+
+      const animStatus = await response.json();
+
+      if (animStatus.status === "SUCCEEDED") {
+        const result = animStatus.result || {};
+        await updateAnimationStatus(supabase, assetId, animName, {
+          task_id: animTaskId,
+          status: "SUCCEEDED",
+          glb_url: result.animation_glb_url,
+          fbx_url: result.animation_fbx_url,
+          finished_at: new Date().toISOString(),
+        });
+        console.log(`Animation ${animName} completed for ${assetId}`);
+        return;
+      }
+
+      if (animStatus.status === "FAILED") {
+        await updateAnimationStatus(supabase, assetId, animName, {
+          task_id: animTaskId,
+          status: "FAILED",
+          error: animStatus.task_error?.message || "Animation failed",
+        });
+        console.log(`Animation ${animName} failed for ${assetId}`);
+        return;
+      }
+    } catch (error) {
+      console.error(`Animation poll error ${animName} for ${assetId}: ${error}`);
+    }
+  }
+
+  await updateAnimationStatus(supabase, assetId, animName, {
+    task_id: animTaskId,
+    status: "FAILED",
+    error: "Polling timeout",
+  });
+}
+
+async function updateAssetMetadata(
+  supabase: ReturnType<typeof createClient>,
+  assetId: string,
+  partialMetadata: Record<string, unknown>
+) {
+  const { data: asset } = await supabase
+    .from("asset_library")
+    .select("metadata")
+    .eq("id", assetId)
+    .maybeSingle();
+
+  const existing = asset?.metadata || {};
+  await supabase
+    .from("asset_library")
+    .update({
+      metadata: { ...existing, ...partialMetadata },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", assetId);
+}
+
+async function updateAnimationStatus(
+  supabase: ReturnType<typeof createClient>,
+  assetId: string,
+  animName: string,
+  animData: Record<string, unknown>
+) {
+  const { data: asset } = await supabase
+    .from("asset_library")
+    .select("metadata")
+    .eq("id", assetId)
+    .maybeSingle();
+
+  const existing = asset?.metadata || {};
+  const animations = existing.animations || {};
+  animations[animName] = { ...(animations[animName] || {}), ...animData };
+
+  await supabase
+    .from("asset_library")
+    .update({
+      metadata: { ...existing, animations },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", assetId);
 }

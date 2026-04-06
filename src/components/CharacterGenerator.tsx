@@ -1,13 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { Wand2, Loader2, AlertCircle, CheckCircle, Sparkles, X, Download, Library } from 'lucide-react';
-import { useCharacterGeneration } from '../hooks/useCharacterGeneration';
+import { Wand2, Loader2, AlertCircle, CheckCircle, Sparkles, X, Download, Library, Bone, Play } from 'lucide-react';
+import { useCharacterGeneration, GenerationPhase } from '../hooks/useCharacterGeneration';
 import { AssetLibraryService, Asset } from '../services/AssetLibraryService';
+import type { AnimationUrls } from '../services/CharacterAnimationService';
 
 interface CharacterGeneratorProps {
   isVisible: boolean;
   onClose: () => void;
-  onModelReady?: (glbUrl: string) => void;
+  onModelReady?: (glbUrl: string, animationUrls?: AnimationUrls) => void;
 }
+
+const PHASE_LABELS: Record<GenerationPhase, string> = {
+  idle: '',
+  generating: 'Generating 3D Model',
+  model_complete: 'Model Ready',
+  rigging: 'Rigging Skeleton',
+  animating: 'Creating Animations',
+  completed: 'All Animations Ready',
+  failed: 'Error',
+};
+
+const PHASE_DESCRIPTIONS: Record<GenerationPhase, string> = {
+  idle: '',
+  generating: 'Building a 3D model from your description. This usually takes 2-5 minutes.',
+  model_complete: 'Your 3D model is ready. You can apply it now, or rig it for animations.',
+  rigging: 'Adding a skeleton to the model so it can move naturally.',
+  animating: 'Generating walk, run, idle, attack, and death animations.',
+  completed: 'Your character is fully animated and ready to play.',
+  failed: 'Something went wrong. You can try again.',
+};
 
 export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
   isVisible,
@@ -19,7 +40,17 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
   const [tab, setTab] = useState<'generate' | 'library'>('generate');
   const [libraryAssets, setLibraryAssets] = useState<Asset[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
-  const { generating, character, error, progress, generateCharacter, reset } = useCharacterGeneration();
+  const {
+    generating,
+    character,
+    error,
+    progress,
+    animationProgress,
+    animationUrls,
+    generateCharacter,
+    triggerRigging,
+    reset,
+  } = useCharacterGeneration();
 
   useEffect(() => {
     if (isVisible && tab === 'library') {
@@ -45,12 +76,23 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
     await generateCharacter({ description: description.trim(), artStyle });
   };
 
-  const handleApplyModel = (glbUrl: string) => {
-    onModelReady?.(glbUrl);
+  const handleApplyModel = (glbUrl: string, anims?: AnimationUrls) => {
+    onModelReady?.(glbUrl, anims);
     onClose();
   };
 
+  const handleRigAndAnimate = () => {
+    if (character?.assetId) {
+      triggerRigging(character.assetId);
+    }
+  };
+
   if (!isVisible) return null;
+
+  const showForm = progress === 'idle' || progress === 'failed';
+  const showProgress = progress === 'generating' || progress === 'rigging' || progress === 'animating';
+  const showModelReady = progress === 'model_complete';
+  const showCompleted = progress === 'completed';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -100,7 +142,7 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
         <div className="p-5 overflow-y-auto flex-1">
           {tab === 'generate' && (
             <>
-              {(progress === 'idle' || progress === 'failed') && (
+              {showForm && (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -143,32 +185,15 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
                     disabled={generating || !description.trim()}
                     className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:from-slate-600 disabled:to-slate-600 text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all"
                   >
-                    {generating ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 className="w-4 h-4" />
-                        Generate Character Model
-                      </>
-                    )}
+                    <Wand2 className="w-4 h-4" />
+                    Generate Character Model
                   </button>
                 </form>
               )}
 
-              {progress === 'generating' && character && (
+              {showProgress && (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
-                    <div>
-                      <p className="font-semibold text-white">Generating Your Character</p>
-                      <p className="text-sm text-slate-400 mt-0.5">
-                        This usually takes 2-5 minutes. The model will appear when ready.
-                      </p>
-                    </div>
-                  </div>
+                  <PipelineProgress progress={progress} animationProgress={animationProgress} />
 
                   <div className="bg-slate-800/50 p-4 rounded-lg">
                     <p className="text-sm text-slate-400 mb-1">Prompt:</p>
@@ -185,14 +210,14 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
                 </div>
               )}
 
-              {progress === 'completed' && character && (
+              {showModelReady && character && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
                     <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                     <div>
-                      <p className="font-semibold text-white">Character Model Ready</p>
+                      <p className="font-semibold text-white">3D Model Ready</p>
                       <p className="text-sm text-slate-400 mt-0.5">
-                        Your AI character has been saved to the shared asset library.
+                        Apply it as-is, or rig it with skeleton + animations.
                       </p>
                     </div>
                   </div>
@@ -201,10 +226,56 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleApplyModel(character.modelUrl!)}
-                        className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all"
+                        className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all"
                       >
                         <Download className="w-4 h-4" />
-                        Apply to Character
+                        Apply Static Model
+                      </button>
+                      <button
+                        onClick={handleRigAndAnimate}
+                        className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Bone className="w-4 h-4" />
+                        Rig & Animate
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={reset}
+                    className="w-full py-2.5 bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+                  >
+                    Generate Another
+                  </button>
+                </div>
+              )}
+
+              {showCompleted && character && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                    <Play className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-white">Animated Character Ready</p>
+                      <p className="text-sm text-slate-400 mt-0.5">
+                        {animationProgress
+                          ? `${animationProgress.progress.completed}/${animationProgress.progress.total} animations generated.`
+                          : 'Your character is fully rigged and animated.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {animationProgress && (
+                    <AnimationList animations={animationProgress.animations} />
+                  )}
+
+                  {character.modelUrl && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleApplyModel(character.modelUrl!, animationUrls || undefined)}
+                        className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Play className="w-4 h-4" />
+                        Apply Animated Character
                       </button>
                     </div>
                   )}
@@ -222,7 +293,7 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
                 <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg mt-4">
                   <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="font-semibold text-white">Generation Error</p>
+                    <p className="font-semibold text-white">Error</p>
                     <p className="text-sm text-slate-400 mt-0.5">{error}</p>
                   </div>
                 </div>
@@ -300,3 +371,92 @@ export const CharacterGenerator: React.FC<CharacterGeneratorProps> = ({
     </div>
   );
 };
+
+const PIPELINE_STEPS: { key: GenerationPhase; label: string; icon: React.ReactNode }[] = [
+  { key: 'generating', label: 'Model', icon: <Wand2 className="w-3.5 h-3.5" /> },
+  { key: 'rigging', label: 'Rigging', icon: <Bone className="w-3.5 h-3.5" /> },
+  { key: 'animating', label: 'Animate', icon: <Play className="w-3.5 h-3.5" /> },
+];
+
+function PipelineProgress({
+  progress,
+  animationProgress,
+}: {
+  progress: GenerationPhase;
+  animationProgress: ReturnType<typeof useCharacterGeneration>['animationProgress'];
+}) {
+  const stepOrder: GenerationPhase[] = ['generating', 'rigging', 'animating'];
+  const currentIndex = stepOrder.indexOf(progress);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        {PIPELINE_STEPS.map((step, i) => {
+          const isActive = step.key === progress;
+          const isDone = currentIndex > i || progress === 'completed';
+
+          return (
+            <React.Fragment key={step.key}>
+              {i > 0 && (
+                <div className={`flex-1 h-0.5 ${isDone ? 'bg-emerald-500' : 'bg-slate-700'}`} />
+              )}
+              <div
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  isDone
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : isActive
+                    ? 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40'
+                    : 'bg-slate-800 text-slate-500'
+                }`}
+              >
+                {isActive ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isDone ? <CheckCircle className="w-3.5 h-3.5" /> : step.icon}
+                {step.label}
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+        <Loader2 className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
+        <div>
+          <p className="font-semibold text-white">{PHASE_LABELS[progress]}</p>
+          <p className="text-sm text-slate-400 mt-0.5">{PHASE_DESCRIPTIONS[progress]}</p>
+          {animationProgress && progress === 'animating' && (
+            <p className="text-sm text-blue-400 mt-1">
+              {animationProgress.progress.completed}/{animationProgress.progress.total} animations done
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnimationList({ animations }: { animations: Record<string, { status: string; glb_url?: string }> }) {
+  return (
+    <div className="grid grid-cols-5 gap-2">
+      {Object.entries(animations).map(([name, data]) => (
+        <div
+          key={name}
+          className={`flex flex-col items-center gap-1 p-2 rounded-lg text-xs ${
+            data.status === 'SUCCEEDED'
+              ? 'bg-emerald-500/10 text-emerald-400'
+              : data.status === 'FAILED'
+              ? 'bg-red-500/10 text-red-400'
+              : 'bg-slate-800 text-slate-500'
+          }`}
+        >
+          {data.status === 'SUCCEEDED' ? (
+            <CheckCircle className="w-4 h-4" />
+          ) : data.status === 'FAILED' ? (
+            <AlertCircle className="w-4 h-4" />
+          ) : (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          )}
+          <span className="capitalize font-medium">{name}</span>
+        </div>
+      ))}
+    </div>
+  );
+}

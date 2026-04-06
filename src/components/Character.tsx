@@ -225,27 +225,45 @@ export class Character {
     this.characterMesh.mesh.position.copy(collisionResult.position);
     this.velocity.copy(collisionResult.velocity);
 
-    // Update animations with proper time scaling
-    this.characterAnimations.updateMovementAnimations(
-      input,
-      this.velocity,
-      this.characterMesh.leftArm,
-      this.characterMesh.rightArm,
-      this.characterMesh.leftLeg,
-      this.characterMesh.rightLeg
-    );
+    if (this.characterMesh.getHasAnimations()) {
+      const isMoving = this.velocity.length() > 0.01;
+      const isRunning = input.run && isMoving;
 
-    this.characterAnimations.updateToolAnimation(
-      this.characterMesh.rightArm,
-      this.characterEquipment['toolMesh'],
-      this.equipmentManager.getEquippedTool()
-    );
+      if (this.characterAnimations.isAttacking) {
+        this.characterMesh.playAnimation('attack', 0.15);
+      } else if (isRunning) {
+        this.characterMesh.playAnimation('run');
+      } else if (isMoving) {
+        this.characterMesh.playAnimation('walk');
+      } else {
+        this.characterMesh.playAnimation('idle');
+      }
 
-    this.characterAnimations.updateWeaponAnimation(
-      this.characterMesh.leftArm,
-      this.characterEquipment['weaponMesh'],
-      this.equipmentManager.getEquippedWeapon()
-    );
+      this.characterMesh.updateMixer(clampedDeltaTime / 1000);
+    } else {
+      this.characterAnimations.updateMovementAnimations(
+        input,
+        this.velocity,
+        this.characterMesh.leftArm,
+        this.characterMesh.rightArm,
+        this.characterMesh.leftLeg,
+        this.characterMesh.rightLeg
+      );
+
+      this.characterAnimations.updateToolAnimation(
+        this.characterMesh.rightArm,
+        this.characterEquipment['toolMesh'],
+        this.equipmentManager.getEquippedTool()
+      );
+
+      this.characterAnimations.updateWeaponAnimation(
+        this.characterMesh.leftArm,
+        this.characterEquipment['weaponMesh'],
+        this.equipmentManager.getEquippedWeapon()
+      );
+
+      this.characterMesh.updateMixer(clampedDeltaTime / 1000);
+    }
   }
 
   private useTool(): void {

@@ -1,11 +1,43 @@
 import { useState, useCallback } from 'react';
-import { CharacterGenerationRequest, GeneratedCharacter } from '../services/CharacterGenerationService';
+import {
+  AnimationProgress,
+  AnimationUrls,
+  pollAnimationProgress,
+  extractAnimationUrls,
+  startRigging,
+} from '../services/CharacterAnimationService';
+
+export interface GeneratedCharacter {
+  assetId: string;
+  meshyRequestId: string;
+  status: 'pending' | 'completed' | 'failed';
+  modelUrl?: string;
+  previewUrl?: string;
+  estimatedTime?: string;
+}
+
+export type GenerationPhase =
+  | 'idle'
+  | 'generating'
+  | 'model_complete'
+  | 'rigging'
+  | 'animating'
+  | 'completed'
+  | 'failed';
+
+export interface CharacterGenerationRequest {
+  description: string;
+  artStyle?: 'realistic' | 'stylized' | 'cartoon' | 'anime';
+  userId?: string;
+}
 
 interface UseCharacterGenerationState {
   generating: boolean;
   character: GeneratedCharacter | null;
   error: string | null;
-  progress: 'idle' | 'generating' | 'completed' | 'failed';
+  progress: GenerationPhase;
+  animationProgress: AnimationProgress | null;
+  animationUrls: AnimationUrls | null;
 }
 
 export const useCharacterGeneration = () => {
@@ -14,6 +46,8 @@ export const useCharacterGeneration = () => {
     character: null,
     error: null,
     progress: 'idle',
+    animationProgress: null,
+    animationUrls: null,
   });
 
   const generateCharacter = useCallback(
@@ -23,6 +57,8 @@ export const useCharacterGeneration = () => {
         generating: true,
         error: null,
         progress: 'generating',
+        animationProgress: null,
+        animationUrls: null,
       }));
 
       try {
@@ -54,8 +90,8 @@ export const useCharacterGeneration = () => {
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(`Generation failed: ${error.error}`);
+          const err = await response.json();
+          throw new Error(`Generation failed: ${err.error}`);
         }
 
         const data = await response.json();
@@ -73,7 +109,7 @@ export const useCharacterGeneration = () => {
           progress: 'generating',
         }));
 
-        pollForCompletion(character.meshyRequestId, setState);
+        pollForModelCompletion(character, setState);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         setState(prev => ({
@@ -87,31 +123,78 @@ export const useCharacterGeneration = () => {
     []
   );
 
+  const triggerRigging = useCallback(async (assetId: string) => {
+    setState(prev => ({ ...prev, progress: 'rigging', generating: true }));
+
+    try {
+      await startRigging(assetId);
+
+      const finalProgress = await pollAnimationProgress(
+        assetId,
+        (progress) => {
+          const phase: GenerationPhase =
+            progress.overall_status === 'rigging' ? 'rigging' :
+            progress.overall_status === 'animating' ? 'animating' :
+            progress.overall_status === 'completed' ? 'completed' :
+            progress.overall_status === 'partial' ? 'completed' :
+            progress.overall_status === 'failed' ? 'failed' : 'animating';
+
+          setState(prev => ({
+            ...prev,
+            progress: phase,
+            animationProgress: progress,
+          }));
+        }
+      );
+
+      const urls = extractAnimationUrls(finalProgress);
+
+      setState(prev => ({
+        ...prev,
+        generating: false,
+        progress: finalProgress.overall_status === 'failed' ? 'failed' : 'completed',
+        animationProgress: finalProgress,
+        animationUrls: Object.keys(urls).length > 0 ? urls : null,
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Rigging failed';
+      setState(prev => ({
+        ...prev,
+        error: errorMessage,
+        generating: false,
+        progress: 'failed',
+      }));
+    }
+  }, []);
+
   const reset = useCallback(() => {
     setState({
       generating: false,
       character: null,
       error: null,
       progress: 'idle',
+      animationProgress: null,
+      animationUrls: null,
     });
   }, []);
 
   return {
     ...state,
     generateCharacter,
+    triggerRigging,
     reset,
   };
 };
 
-async function pollForCompletion(
-  meshyRequestId: string,
+async function pollForModelCompletion(
+  character: GeneratedCharacter,
   setState: React.Dispatch<React.SetStateAction<UseCharacterGenerationState>>,
-  maxAttempts: number = 60,
-  interval: number = 5000
+  maxAttempts = 60,
+  interval = 5000
 ) {
   let attempts = 0;
 
-  const checkStatus = async () => {
+  while (attempts < maxAttempts) {
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -126,14 +209,12 @@ async function pollForCompletion(
           },
           body: JSON.stringify({
             action: 'check-status',
-            meshyRequestId,
+            meshyRequestId: character.meshyRequestId,
           }),
         }
       );
 
-      if (!response.ok) {
-        throw new Error('Failed to check status');
-      }
+      if (!response.ok) throw new Error('Failed to check status');
 
       const data = await response.json();
 
@@ -148,10 +229,9 @@ async function pollForCompletion(
                 previewUrl: data.thumbnail_url || data.model_urls?.glb,
               }
             : null,
-          generating: false,
-          progress: 'completed',
+          progress: 'model_complete',
         }));
-        return true;
+        return;
       }
 
       if (data.status === 'FAILED') {
@@ -161,19 +241,11 @@ async function pollForCompletion(
           generating: false,
           progress: 'failed',
         }));
-        return true;
+        return;
       }
-
-      return false;
     } catch (error) {
       console.warn('Error checking generation status:', error);
-      return false;
     }
-  };
-
-  while (attempts < maxAttempts) {
-    const completed = await checkStatus();
-    if (completed) return;
 
     attempts++;
     await new Promise(resolve => setTimeout(resolve, interval));
@@ -181,7 +253,7 @@ async function pollForCompletion(
 
   setState(prev => ({
     ...prev,
-    error: 'Generation is taking longer than expected. Check back in a few minutes.',
+    error: 'Generation is taking longer than expected.',
     generating: false,
     progress: 'failed',
   }));

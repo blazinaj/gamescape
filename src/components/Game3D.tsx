@@ -892,11 +892,12 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       <CharacterGenerator
         isVisible={uiState.showCharacterGenerator}
         onClose={() => uiState.setShowCharacterGenerator(false)}
-        onModelReady={(glbUrl: string) => {
+        onModelReady={(glbUrl, animationUrls) => {
           if (gameRef.current.character) {
-            gameRef.current.character.getCharacterMesh().loadGLBModel(glbUrl).then(success => {
-              if (success) {
-                console.log('Applied AI-generated character model');
+            const mesh = gameRef.current.character.getCharacterMesh();
+            mesh.loadGLBModel(glbUrl).then(success => {
+              if (success && animationUrls) {
+                mesh.loadAnimationGLBs(animationUrls);
               }
             });
           }

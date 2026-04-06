@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { CharacterCustomization, DEFAULT_CUSTOMIZATION } from '../../types/CharacterTypes';
 import { getGLBModelLoader } from '../../services/GLBModelLoader';
+import type { AnimationUrls } from '../../services/CharacterAnimationService';
+
+export type CharacterAnimationName = 'idle' | 'walk' | 'run' | 'attack' | 'death';
 
 export interface CharacterParts {
   body?: THREE.Mesh;
@@ -26,6 +29,11 @@ export class CharacterMesh {
   private isUsingGLB = false;
   private glbModel: THREE.Group | null = null;
   private mixer: THREE.AnimationMixer | null = null;
+
+  private animationClips: Map<string, THREE.AnimationClip> = new Map();
+  private animationActions: Map<string, THREE.AnimationAction> = new Map();
+  private currentAnimation = '';
+  private hasAnimatedModel = false;
 
   constructor(customization?: CharacterCustomization) {
     this.mesh = new THREE.Group();
@@ -66,6 +74,11 @@ export class CharacterMesh {
       this.mesh.add(scene);
       this.isUsingGLB = true;
 
+      this.animationClips.clear();
+      this.animationActions.clear();
+      this.currentAnimation = '';
+      this.hasAnimatedModel = false;
+
       if (animations.length > 0) {
         this.mixer = new THREE.AnimationMixer(scene);
         const idleClip = animations.find(c =>
@@ -74,7 +87,6 @@ export class CharacterMesh {
         this.mixer.clipAction(idleClip).play();
       }
 
-      console.log('Loaded GLB character model from:', url);
       return true;
     } catch (e) {
       console.warn('Failed to load GLB character model:', e);
@@ -82,8 +94,74 @@ export class CharacterMesh {
     }
   }
 
+  async loadAnimationGLBs(animationUrls: AnimationUrls): Promise<void> {
+    if (!this.glbModel) return;
+
+    this.mixer = new THREE.AnimationMixer(this.glbModel);
+    this.animationClips.clear();
+    this.animationActions.clear();
+    this.hasAnimatedModel = false;
+
+    const loader = getGLBModelLoader();
+
+    for (const [name, url] of Object.entries(animationUrls)) {
+      if (!url) continue;
+      try {
+        const { animations } = await loader.load(url);
+        if (animations.length > 0) {
+          const clip = animations[0];
+          clip.name = name;
+          this.animationClips.set(name, clip);
+
+          const action = this.mixer.clipAction(clip);
+          action.setEffectiveWeight(0);
+          this.animationActions.set(name, action);
+        }
+      } catch (e) {
+        console.warn(`Failed to load animation "${name}":`, e);
+      }
+    }
+
+    this.hasAnimatedModel = this.animationClips.size > 0;
+    if (this.hasAnimatedModel) {
+      this.playAnimation('idle');
+    }
+  }
+
+  playAnimation(name: CharacterAnimationName, crossFadeDuration = 0.3): void {
+    if (!this.hasAnimatedModel || !this.mixer) return;
+    if (name === this.currentAnimation) return;
+
+    const nextAction = this.animationActions.get(name);
+    if (!nextAction) return;
+
+    const prevAction = this.animationActions.get(this.currentAnimation);
+
+    nextAction.reset();
+    nextAction.setEffectiveWeight(1);
+    nextAction.play();
+
+    if (prevAction) {
+      prevAction.crossFadeTo(nextAction, crossFadeDuration, true);
+    }
+
+    this.currentAnimation = name;
+  }
+
+  updateMixer(deltaSeconds: number): void {
+    this.mixer?.update(deltaSeconds);
+  }
+
   getIsUsingGLB(): boolean {
     return this.isUsingGLB;
+  }
+
+  getHasAnimations(): boolean {
+    return this.hasAnimatedModel;
+  }
+
+  getCurrentAnimation(): string {
+    return this.currentAnimation;
   }
 
   getMixer(): THREE.AnimationMixer | null {
@@ -97,6 +175,10 @@ export class CharacterMesh {
     this.glbModel = null;
     this.mixer = null;
     this.isUsingGLB = false;
+    this.hasAnimatedModel = false;
+    this.animationClips.clear();
+    this.animationActions.clear();
+    this.currentAnimation = '';
     this.characterParts = {};
     this.createCharacterMesh();
     this.alignMeshToGround();
