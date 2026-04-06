@@ -3,11 +3,13 @@ import { Game3D } from './components/Game3D';
 import { MainMenu } from './components/MainMenu';
 import { GameStore } from './components/GameStore';
 import { CreateWorldForm } from './components/CreateWorldForm';
+import { CharacterCreationStep } from './components/CharacterCreationStep';
 import { AssetLibraryBrowser } from './components/AssetLibraryBrowser';
 import { AppMode } from './types/AppTypes';
 import { useAuth } from './hooks/useAuth';
 import { useProfile } from './hooks/useProfile';
 import { GameScenario } from './components/ScenarioSelector';
+import { CharacterCustomization, DEFAULT_CUSTOMIZATION } from './types/CharacterTypes';
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -15,7 +17,7 @@ function App() {
   const [appMode, setAppMode] = useState<AppMode>('home');
   const [currentGameId, setCurrentGameId] = useState<string | null>(null);
   const [currentScenario, setCurrentScenario] = useState<GameScenario | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
+  const [characterCustomization, setCharacterCustomization] = useState<CharacterCustomization>(DEFAULT_CUSTOMIZATION);
 
   const handleNavigateToHome = () => {
     setAppMode('home');
@@ -34,17 +36,21 @@ function App() {
   };
 
   const handleCreateWorld = (name: string, scenario: GameScenario) => {
-    setIsCreating(true);
     const namedScenario = { ...scenario, name };
     setCurrentScenario(namedScenario);
     setCurrentGameId(null);
+    setAppMode('characterCreate');
+  };
+
+  const handleCharacterReady = (customization: CharacterCustomization) => {
+    setCharacterCustomization(customization);
     setAppMode('play');
-    setIsCreating(false);
   };
 
   const handleReturnToHome = () => {
     setCurrentGameId(null);
     setCurrentScenario(null);
+    setCharacterCustomization(DEFAULT_CUSTOMIZATION);
     setAppMode('home');
   };
 
@@ -69,9 +75,20 @@ function App() {
         <Game3D
           gameId={currentGameId || undefined}
           scenario={currentScenario || undefined}
+          initialCustomization={characterCustomization}
           onReturnToMenu={handleReturnToHome}
         />
       </div>
+    );
+  }
+
+  if (appMode === 'characterCreate' && currentScenario) {
+    return (
+      <CharacterCreationStep
+        scenario={currentScenario}
+        onBack={() => setAppMode('create')}
+        onStart={handleCharacterReady}
+      />
     );
   }
 
@@ -80,7 +97,7 @@ function App() {
       <CreateWorldForm
         onCreateWorld={handleCreateWorld}
         onBack={handleNavigateToHome}
-        isCreating={isCreating}
+        isCreating={false}
       />
     );
   }

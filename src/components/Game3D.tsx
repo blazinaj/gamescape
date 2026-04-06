@@ -26,6 +26,7 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { GameInitializer } from '../services/GameInitializer';
 import { GameLoader } from '../services/GameLoader';
+import { SaveSystem } from '../services/SaveSystem';
 import { Zap, Map as MapIcon, MessageCircle, Package, Skull, Scroll } from 'lucide-react';
 import * as THREE from 'three';
 import { CollisionSystem } from '../services/CollisionSystem';
@@ -36,11 +37,12 @@ import { CharacterGenerator } from './CharacterGenerator';
 interface Game3DProps {
   gameId?: string;
   scenario?: GameScenario;
+  initialCustomization?: import('../types/CharacterTypes').CharacterCustomization;
   onReturnToMenu: () => void;
 }
 
-export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu }) => {
-  console.log('🚀 Game3D Component Starting - gameId:', gameId, 'scenario:', scenario?.name);
+export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, initialCustomization, onReturnToMenu }) => {
+  console.log('Game3D Component Starting - gameId:', gameId, 'scenario:', scenario?.name);
   
   const mountRef = useRef<HTMLDivElement>(null);
   const gameState = useGameState(gameId);
@@ -83,6 +85,12 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
   } = gameState;
 
   const { isUIActive } = uiState;
+
+  useEffect(() => {
+    if (initialCustomization) {
+      setCharacterCustomization(initialCustomization);
+    }
+  }, []);
 
   // Auto-save functionality with improved settings
   const autoSaveState = useAutoSave({
@@ -371,29 +379,28 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     console.log("Ground plane registered with top surface at y=0");
   };
 
-  const initializeGameWithScenario = () => {
+  const initializeGameWithScenario = async () => {
     if (!mountRef.current || !scenario) {
-      console.error('❌ mountRef.current is null or scenario is missing during initialization!');
       return;
     }
 
-    console.log('🌍 Initializing game with scenario:', scenario.name);
+    const saveSystem = new SaveSystem();
+    const worldName = scenario.name || 'New World';
+    const newGameId = await saveSystem.createNewGameWithScenario(worldName, scenario);
 
     GameInitializer.initializeGameWithScenario(
       gameRef.current,
       mountRef.current,
       characterCustomization,
-      null, // No game data for new game
+      null,
       scenario,
       isUIActive,
       {
         onTileGenerated: (tile, description) => {
-          console.log('🎯 Tile generated:', tile.id);
           setGeneratedTiles(prev => [...prev, { tile, description }]);
           setIsGenerating(false);
         },
-        onGenerationStart: (x, z) => {
-          console.log('🔄 Starting tile generation at:', x, z);
+        onGenerationStart: () => {
           setIsGenerating(true);
         },
         setCurrentBiome,
@@ -406,7 +413,10 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       }
     );
 
-    // Register a flat ground collision object
+    if (newGameId && gameRef.current.saveSystem) {
+      gameRef.current.saveSystem.setCurrentGameId(newGameId);
+    }
+
     CollisionSystem.getInstance().registerObject({
       id: 'ground',
       type: 'static',
@@ -421,8 +431,6 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
       canCollideWith: ['character', 'enemy', 'npc', 'dynamic'],
       userData: { type: 'ground' }
     });
-
-    console.log("Ground plane registered with top surface at y=0");
   };
 
   const handleCharacterCustomization = (customization: CharacterCustomization) => {

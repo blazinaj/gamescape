@@ -1,4 +1,4 @@
-export type AppMode = 'home' | 'create' | 'play' | 'assets';
+export type AppMode = 'home' | 'create' | 'characterCreate' | 'play' | 'assets';
 
 export interface AppState {
   mode: AppMode;

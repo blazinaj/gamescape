@@ -78,6 +78,15 @@ export class SaveSystem {
   private currentGameId: string | null = null;
   private startTime: number = Date.now();
 
+  setCurrentGameId(id: string): void {
+    this.currentGameId = id;
+    this.startTime = Date.now();
+  }
+
+  getCurrentGameId(): string | null {
+    return this.currentGameId;
+  }
+
   async ensureAuthenticated(): Promise<boolean> {
     const { data: { user } } = await supabase.auth.getUser();
     return !!user;
@@ -575,18 +584,28 @@ export class SaveSystem {
     }
   }
 
-  getCurrentGameId(): string | null {
-    return this.currentGameId;
-  }
+  static async getUserWorlds(): Promise<GameSave[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
 
-  setCurrentGameId(gameId: string): void {
-    this.currentGameId = gameId;
+      const { data, error } = await supabase
+        .from('games')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    } catch {
+      return [];
+    }
   }
 
   formatPlayTime(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes}m`;
     }
