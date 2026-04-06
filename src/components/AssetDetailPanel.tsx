@@ -476,7 +476,7 @@ function AnimationRow({
   return (
     <div
       onClick={canPlay ? onSelect : undefined}
-      className={`flex items-center gap-3 p-2.5 rounded-lg transition-all ${
+      className={`group flex items-center gap-3 p-2.5 rounded-lg transition-all ${
         canPlay ? 'cursor-pointer' : ''
       } ${
         isActive
@@ -488,13 +488,19 @@ function AnimationRow({
               : 'bg-slate-800/60 border border-transparent'
       }`}
     >
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center">
         {isActive ? (
-          <Play className="w-4 h-4 text-teal-400" />
-        ) : isComplete ? (
-          <CheckCircle className="w-4 h-4 text-emerald-400" />
+          <div className="w-8 h-8 rounded-lg bg-teal-500/20 flex items-center justify-center">
+            <Play className="w-4 h-4 text-teal-400 fill-teal-400" />
+          </div>
+        ) : canPlay ? (
+          <div className="w-8 h-8 rounded-lg bg-slate-700/50 group-hover:bg-teal-500/10 flex items-center justify-center transition-colors">
+            <Play className="w-4 h-4 text-slate-500 group-hover:text-teal-400 transition-colors" />
+          </div>
         ) : isFailed ? (
           <AlertCircle className="w-4 h-4 text-red-400" />
+        ) : isComplete ? (
+          <CheckCircle className="w-4 h-4 text-emerald-400" />
         ) : (
           <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
         )}
@@ -503,11 +509,8 @@ function AnimationRow({
         <span className={`text-sm font-medium capitalize ${
           isActive ? 'text-teal-300' : 'text-slate-300'
         }`}>{name}</span>
-        {canPlay && !isActive && (
-          <span className="ml-2 text-xs text-slate-600">click to preview</span>
-        )}
         {isActive && (
-          <span className="ml-2 text-xs text-teal-500">playing</span>
+          <span className="ml-2 text-xs text-teal-500 font-medium">playing</span>
         )}
       </div>
       {anim.glb_url && (

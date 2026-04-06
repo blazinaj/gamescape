@@ -269,6 +269,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
           action.play();
           currentActionRef.current = action;
           setActiveAnim(startIdx);
+          onAnimationChange?.(allAnimations[startIdx].name);
         }
 
         setLoading(false);
@@ -343,7 +344,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
     if (idx >= 0 && idx !== activeAnim) {
       playAnimation(idx);
     }
-  }, [selectedAnimation, animations]);
+  }, [selectedAnimation, animations, activeAnim, playAnimation]);
 
   useEffect(() => {
     if (!containerRef.current || !cameraRef.current || !rendererRef.current) return;
