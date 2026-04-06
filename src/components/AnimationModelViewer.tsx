@@ -40,6 +40,18 @@ function isValidUrl(url: string | undefined | null): url is string {
   }
 }
 
+const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/model-proxy`;
+
+function proxyUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'assets.meshy.ai' || parsed.hostname === 'api.meshy.ai') {
+      return `${PROXY_BASE}?url=${encodeURIComponent(url)}`;
+    }
+  } catch { /* not a valid URL, return as-is */ }
+  return url;
+}
+
 export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
   modelUrl,
   animationUrls = {},
@@ -209,7 +221,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
       }
 
       try {
-        const gltf = await loadGltf(loader, primaryUrl);
+        const gltf = await loadGltf(loader, proxyUrl(primaryUrl));
         if (!mountedRef.current) return;
 
         const model = gltf.scene;
@@ -245,7 +257,7 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
         for (const [name, url] of animEntries) {
           if (!mountedRef.current) return;
           try {
-            const animGltf = await loadGltf(loader, url);
+            const animGltf = await loadGltf(loader, proxyUrl(url));
             if (animGltf.animations && animGltf.animations.length > 0) {
               animGltf.animations.forEach((clip: THREE.AnimationClip) => {
                 allAnimations.push({ name, clip });
