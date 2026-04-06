@@ -179,7 +179,7 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                   riggedModelUrl={riggingMeta.rigged_glb_url}
                   animationUrls={animationGlbUrls}
                   className="w-full h-full"
-                  onLoadError={() => setViewMode('image')}
+                  onLoadError={() => {}}
                   selectedAnimation={selectedAnimation}
                   onAnimationChange={setSelectedAnimation}
                 />

@@ -403,15 +403,26 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#1a1e2e]/90 rounded-xl z-10">
           <div className="flex flex-col items-center gap-3 text-center px-6">
-            <AlertCircle className="w-8 h-8 text-red-400" />
-            <span className="text-sm text-red-300">{error}</span>
-            <button
-              onClick={handleRetry}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Retry
-            </button>
+            <AlertCircle className="w-8 h-8 text-amber-400" />
+            <span className="text-sm text-slate-300">3D preview unavailable</span>
+            <span className="text-xs text-slate-500">The model could not be loaded in the preview environment</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRetry}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Retry
+              </button>
+              <a
+                href={isValidUrl(riggedModelUrl) ? riggedModelUrl : modelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-400 bg-teal-500/10 hover:bg-teal-500/20 rounded-lg transition-colors"
+              >
+                Open model
+              </a>
+            </div>
           </div>
         </div>
       )}
