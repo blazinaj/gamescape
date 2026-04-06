@@ -21,6 +21,8 @@ interface AnimationModelViewerProps {
   riggedModelUrl?: string;
   className?: string;
   onLoadError?: () => void;
+  selectedAnimation?: string | null;
+  onAnimationChange?: (name: string | null) => void;
 }
 
 interface LoadedAnimation {
@@ -44,6 +46,8 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
   riggedModelUrl,
   className = '',
   onLoadError,
+  selectedAnimation,
+  onAnimationChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -172,7 +176,8 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
     currentActionRef.current = action;
     setActiveAnim(index);
     setPlaying(true);
-  }, [animations]);
+    onAnimationChange?.(anim.name);
+  }, [animations, onAnimationChange]);
 
   const loadGltf = useCallback((loader: GLTFLoader, url: string): Promise<any> => {
     return new Promise((resolve, reject) => {
@@ -328,6 +333,17 @@ export const AnimationModelViewer: React.FC<AnimationModelViewerProps> = ({
       currentActionRef.current = null;
     };
   }, [modelUrl, riggedModelUrl, JSON.stringify(animationUrls), retryCount]);
+
+  useEffect(() => {
+    if (selectedAnimation === undefined || selectedAnimation === null) return;
+    if (animations.length === 0) return;
+    const idx = animations.findIndex(
+      a => a.name.toLowerCase() === selectedAnimation.toLowerCase()
+    );
+    if (idx >= 0 && idx !== activeAnim) {
+      playAnimation(idx);
+    }
+  }, [selectedAnimation, animations]);
 
   useEffect(() => {
     if (!containerRef.current || !cameraRef.current || !rendererRef.current) return;

@@ -60,6 +60,7 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
   const [rigging, setRigging] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'3d' | 'image'>('3d');
+  const [selectedAnimation, setSelectedAnimation] = useState<string | null>(null);
 
   const metadata = asset.metadata || {};
   const riggingMeta: RiggingMeta = metadata.rigging || {};
@@ -179,6 +180,8 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                   animationUrls={animationGlbUrls}
                   className="w-full h-full"
                   onLoadError={() => setViewMode('image')}
+                  selectedAnimation={selectedAnimation}
+                  onAnimationChange={setSelectedAnimation}
                 />
                 <StatusBadge status={asset.status} />
               </div>
@@ -296,6 +299,13 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                     anim={anim}
                     copiedField={copiedField}
                     onCopy={copyToClipboard}
+                    isActive={selectedAnimation === name}
+                    onSelect={() => {
+                      if (anim.status === 'SUCCEEDED' && hasModel && viewMode === '3d') {
+                        setSelectedAnimation(name);
+                      }
+                    }}
+                    canPlay={anim.status === 'SUCCEEDED' && hasModel && viewMode === '3d'}
                   />
                 ))}
               </div>
@@ -448,21 +458,40 @@ function AnimationRow({
   anim,
   copiedField,
   onCopy,
+  isActive,
+  onSelect,
+  canPlay,
 }: {
   name: string;
   anim: AnimationMeta;
   copiedField: string | null;
   onCopy: (text: string, field: string) => void;
+  isActive: boolean;
+  onSelect: () => void;
+  canPlay: boolean;
 }) {
   const isComplete = anim.status === 'SUCCEEDED';
   const isFailed = anim.status === 'FAILED';
 
   return (
-    <div className={`flex items-center gap-3 p-2.5 rounded-lg ${
-      isComplete ? 'bg-emerald-500/5' : isFailed ? 'bg-red-500/5' : 'bg-slate-800/60'
-    }`}>
+    <div
+      onClick={canPlay ? onSelect : undefined}
+      className={`flex items-center gap-3 p-2.5 rounded-lg transition-all ${
+        canPlay ? 'cursor-pointer' : ''
+      } ${
+        isActive
+          ? 'bg-teal-500/15 border border-teal-500/30 ring-1 ring-teal-500/20'
+          : isComplete
+            ? 'bg-emerald-500/5 border border-transparent hover:bg-emerald-500/10'
+            : isFailed
+              ? 'bg-red-500/5 border border-transparent'
+              : 'bg-slate-800/60 border border-transparent'
+      }`}
+    >
       <div className="flex-shrink-0">
-        {isComplete ? (
+        {isActive ? (
+          <Play className="w-4 h-4 text-teal-400" />
+        ) : isComplete ? (
           <CheckCircle className="w-4 h-4 text-emerald-400" />
         ) : isFailed ? (
           <AlertCircle className="w-4 h-4 text-red-400" />
@@ -470,9 +499,19 @@ function AnimationRow({
           <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
         )}
       </div>
-      <span className="text-sm font-medium text-slate-300 capitalize flex-1">{name}</span>
+      <div className="flex-1 min-w-0">
+        <span className={`text-sm font-medium capitalize ${
+          isActive ? 'text-teal-300' : 'text-slate-300'
+        }`}>{name}</span>
+        {canPlay && !isActive && (
+          <span className="ml-2 text-xs text-slate-600">click to preview</span>
+        )}
+        {isActive && (
+          <span className="ml-2 text-xs text-teal-500">playing</span>
+        )}
+      </div>
       {anim.glb_url && (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <a
             href={anim.glb_url}
             target="_blank"
