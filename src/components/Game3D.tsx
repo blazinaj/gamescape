@@ -99,7 +99,6 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     }
   }, [isUIActive]);
 
-  // Monitor pointer lock state
   useEffect(() => {
     const handlePointerLockChange = () => {
       const locked = document.pointerLockElement === document.body;
@@ -110,11 +109,36 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
     return () => document.removeEventListener('pointerlockchange', handlePointerLockChange);
   }, [setIsPointerLocked]);
 
-  // Force complete loading after initial generation
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isLoaded && initialGenerationComplete) {
+        console.log('⏱️ Page unloading - performing emergency save...');
+        handleSaveGame().catch(err => console.warn('Emergency save failed:', err));
+
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isLoaded, initialGenerationComplete]);
+
+  // Force complete loading and save after initial generation
   useEffect(() => {
     if (isLoaded && !initialGenerationComplete && generatedTiles.length > 0) {
       console.log('✅ Marking generation complete - tiles generated:', generatedTiles.length);
       setInitialGenerationComplete(true);
+
+      // Save the world immediately after initial generation
+      setTimeout(() => {
+        console.log('💾 Saving newly generated world...');
+        handleSaveGame().then(success => {
+          if (success) {
+            console.log('✅ World auto-saved after initial generation');
+          }
+        });
+      }, 500);
     }
   }, [generatedTiles, isLoaded, initialGenerationComplete]);
 
@@ -159,9 +183,15 @@ export const Game3D: React.FC<Game3DProps> = ({ gameId, scenario, onReturnToMenu
 
     return () => {
       console.log('🧹 Cleaning up game components...');
+
+      if (isLoaded && initialGenerationComplete) {
+        console.log('💾 Performing final save before exit...');
+        handleSaveGame().catch(err => console.error('Final save error:', err));
+      }
+
       GameInitializer.cleanup(gameRef.current);
     };
-  }, [isLoadingGame, gameData, mountRef.current, scenario]);
+  }, [isLoaded, initialGenerationComplete]);
 
   // Update custom objects count when object definition system changes
   useEffect(() => {
