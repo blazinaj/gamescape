@@ -3,6 +3,7 @@ import { Game3D } from './components/Game3D';
 import { MainMenu } from './components/MainMenu';
 import { GameStore } from './components/GameStore';
 import { CreateWorldForm } from './components/CreateWorldForm';
+import { AssetLibraryBrowser } from './components/AssetLibraryBrowser';
 import { AppMode } from './types/AppTypes';
 import { useAuth } from './hooks/useAuth';
 import { useProfile } from './hooks/useProfile';
@@ -84,10 +85,32 @@ function App() {
     );
   }
 
+  if (appMode === 'assets') {
+    return (
+      <div className="w-full min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+        <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <button
+              onClick={handleNavigateToHome}
+              className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+            >
+              <span className="text-lg">&larr;</span>
+              <span className="text-sm">Back to Home</span>
+            </button>
+          </div>
+        </header>
+        <div className="max-w-7xl mx-auto px-6 py-10">
+          <AssetLibraryBrowser />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <GameStore
       onNavigateToPlay={handleNavigateToPlay}
       onNavigateToCreate={handleNavigateToCreate}
+      onNavigateToAssets={() => setAppMode('assets')}
     />
   );
 }

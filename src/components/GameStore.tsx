@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Compass, Search, Star, User, LogOut, Plus, Play, Sparkles,
+  Compass, Search, Star, User, LogOut, Plus, Play, Sparkles, Library,
 } from 'lucide-react';
 import { gameStoreService } from '../services/GameStoreService';
 import { GameStoreItem } from '../types/PlatformTypes';
@@ -10,11 +10,13 @@ import { useAuth } from '../hooks/useAuth';
 interface GameStoreProps {
   onNavigateToPlay: (gameId: string) => void;
   onNavigateToCreate: () => void;
+  onNavigateToAssets?: () => void;
 }
 
 export const GameStore: React.FC<GameStoreProps> = ({
   onNavigateToPlay,
   onNavigateToCreate,
+  onNavigateToAssets,
 }) => {
   const { profile } = useProfile();
   const { signOut } = useAuth();
@@ -70,6 +72,17 @@ export const GameStore: React.FC<GameStoreProps> = ({
               />
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
             </div>
+
+            {onNavigateToAssets && (
+              <button
+                onClick={onNavigateToAssets}
+                className="flex items-center gap-2 px-3 py-2 bg-slate-800/60 hover:bg-slate-700/60 rounded-lg transition-colors"
+                title="Asset Library"
+              >
+                <Library className="w-4 h-4 text-teal-400" />
+                <span className="text-sm text-slate-300 hidden sm:inline">Assets</span>
+              </button>
+            )}
 
             <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/60 rounded-lg">
               <User className="w-4 h-4 text-slate-400" />

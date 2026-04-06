@@ -23,6 +23,21 @@ interface CheckStatusRequest {
   meshyRequestId: string;
 }
 
+interface SeedItem {
+  name: string;
+  prompt: string;
+  art_style: string;
+  category: string;
+  tags: string[];
+  description: string;
+}
+
+interface SeedRequest {
+  action: string;
+  assets: SeedItem[];
+  user_id?: string;
+}
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -60,6 +75,8 @@ Deno.serve(async (req: Request) => {
         return await handleCheckStatus(body as CheckStatusRequest, meshyApiKey);
       case "list-assets":
         return await handleListAssets(body, supabase);
+      case "seed-library":
+        return await handleSeedLibrary(body as SeedRequest, meshyApiKey, supabase);
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
@@ -73,6 +90,7 @@ function detectAction(url: string): string {
   if (url.includes("generate-model")) return "generate-model";
   if (url.includes("check-status")) return "check-status";
   if (url.includes("list-assets")) return "list-assets";
+  if (url.includes("seed-library")) return "seed-library";
   return "generate-model";
 }
 
@@ -216,6 +234,132 @@ async function handleListAssets(
   }
 
   return jsonResponse({ assets: data || [] });
+}
+
+async function handleSeedLibrary(
+  body: SeedRequest,
+  meshyApiKey: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const { assets, user_id } = body;
+
+  if (!assets || assets.length === 0) {
+    return jsonResponse({ error: "No assets provided for seeding" }, 400);
+  }
+
+  const results: Array<{
+    name: string;
+    status: "queued" | "error";
+    asset_id?: string;
+    meshy_request_id?: string;
+    error?: string;
+  }> = [];
+
+  for (const item of assets) {
+    try {
+      const { data: existing } = await supabase
+        .from("asset_library")
+        .select("id, status")
+        .eq("name", item.name)
+        .maybeSingle();
+
+      if (existing) {
+        results.push({
+          name: item.name,
+          status: "queued",
+          asset_id: existing.id,
+          error: "Already exists, skipped",
+        });
+        continue;
+      }
+
+      const enhancedPrompt = `${item.prompt}. Game-ready, optimized for real-time rendering.`;
+
+      const meshyResponse = await fetch("https://api.meshy.ai/v2/text-to-3d", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${meshyApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "preview",
+          prompt: enhancedPrompt,
+          art_style: item.art_style || "realistic",
+          negative_prompt: "low quality, blurry, distorted, broken geometry, text, watermark",
+        }),
+      });
+
+      if (!meshyResponse.ok) {
+        const errData = await meshyResponse.json();
+        results.push({
+          name: item.name,
+          status: "error",
+          error: errData.message || meshyResponse.statusText,
+        });
+        continue;
+      }
+
+      const meshyData = await meshyResponse.json();
+
+      const { data: asset, error: insertError } = await supabase
+        .from("asset_library")
+        .insert([{
+          asset_type: "model",
+          content_type: "gltf",
+          name: item.name,
+          description: item.description,
+          prompt: item.prompt,
+          meshy_request_id: meshyData.id,
+          generated_by_user_id: user_id || null,
+          status: "pending",
+          tags: item.tags,
+          metadata: {
+            art_style: item.art_style,
+            model_type: item.category,
+            enhanced_prompt: enhancedPrompt,
+            seed_generated: true,
+          },
+        }])
+        .select()
+        .single();
+
+      if (insertError) {
+        results.push({
+          name: item.name,
+          status: "error",
+          error: insertError.message,
+        });
+        continue;
+      }
+
+      scheduleTaskPolling(meshyApiKey, asset.id, meshyData.id, supabase);
+
+      results.push({
+        name: item.name,
+        status: "queued",
+        asset_id: asset.id,
+        meshy_request_id: meshyData.id,
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (err) {
+      results.push({
+        name: item.name,
+        status: "error",
+        error: String(err),
+      });
+    }
+  }
+
+  const queued = results.filter(r => r.status === "queued" && !r.error?.includes("Already exists")).length;
+  const skipped = results.filter(r => r.error?.includes("Already exists")).length;
+  const errors = results.filter(r => r.status === "error").length;
+
+  return jsonResponse({
+    success: true,
+    summary: { total: assets.length, queued, skipped, errors },
+    results,
+  });
 }
 
 function scheduleTaskPolling(
